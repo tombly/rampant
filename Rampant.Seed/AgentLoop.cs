@@ -31,27 +31,36 @@ public sealed class AgentLoop
     private readonly SignalClient _signal = new(host: "signal-cli", port: 7583);
     private readonly SemaphoreSlim _wake = new(0);
 
-    public async Task RunAsync(CancellationToken ct)
+    public async Task RunAsync(CancellationToken shutdownToken)
     {
         EnsureDirectories();
 
         _ = Task.Run(() => _signal.RunAsync(
             OnSignalMessageReceivedAsync,
-            ct,
-            onError: ex => AppendLineAsync(HeartbeatLogPath, $"{DateTimeOffset.UtcNow:O} signal connection error: {ex.Message}", ct)), ct);
+            shutdownToken,
+            onError: ex => AppendLineAsync(HeartbeatLogPath, $"{DateTimeOffset.UtcNow:O} signal connection error: {ex.Message}", CancellationToken.None)), shutdownToken);
 
-        while (!ct.IsCancellationRequested)
+        while (!shutdownToken.IsCancellationRequested)
         {
             try
             {
-                await RunOneCycleAsync(ct);
+                // Always run a cycle to completion with CancellationToken.None, even if
+                // shutdown is requested mid-cycle - a graceful stop should let an in-flight
+                // message (e.g. an extend_self self-modification) finish, reply, and mark
+                // itself processed rather than being aborted and silently reprocessed from
+                // scratch after restart. Only the decision to start ANOTHER cycle checks
+                // shutdownToken, below.
+                await RunOneCycleAsync(CancellationToken.None);
             }
             catch (Exception ex)
             {
-                await AppendLineAsync(HeartbeatLogPath, $"{DateTimeOffset.UtcNow:O} cycle error: {ex.Message}", ct);
+                await AppendLineAsync(HeartbeatLogPath, $"{DateTimeOffset.UtcNow:O} cycle error: {ex.Message}", CancellationToken.None);
             }
 
-            await WaitForNextCycleAsync(ct);
+            if (shutdownToken.IsCancellationRequested)
+                break;
+
+            await WaitForNextCycleAsync(shutdownToken);
         }
     }
 
