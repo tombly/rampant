@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rampant.Agent</RootNamespace>
+    <AssemblyName>Rampant.Agent</AssemblyName>
+    <!-- Self-contained on purpose, unlike the rest of this repo: SeedBootstrap copies this whole
+         directory out into its own independent git repo on first boot (see PLAN.md -> "Two
+         independent git repositories"), so it can't rely on the monorepo's root
+         Directory.Packages.props still being an ancestor directory once seeded. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.39.0" />
+  </ItemGroup>
+
+</Project>

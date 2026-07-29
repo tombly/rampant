@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+  </Configurations>
+  <Project Path="Rampant.Supervisor/Rampant.Supervisor.csproj" />
+  <Project Path="Rampant.Seed/Rampant.Agent.csproj" />
+</Solution>

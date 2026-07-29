@@ -1,0 +1,30 @@
+services:
+  rampant:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      # Bind mount for local dev/testing convenience (drop a file in ./local-workspace/inbox and
+      # watch ./local-workspace/outbox). On the Pi this can stay a bind mount or become a named
+      # volume - either satisfies "persists across container rebuilds."
+      - ./local-workspace:/workspace
+    depends_on:
+      - signal-cli
+    restart: unless-stopped
+    # Exactly one instance ever touches /workspace - no scaling, no replicas.
+
+  signal-cli:
+    build:
+      context: ./signal-cli
+    env_file:
+      - .env
+    volumes:
+      # Registration data (identity keys) - must persist, or a rebuild forces re-registering the
+      # phone number from scratch. See PLAN.md -> "Opening holes" -> Signal.
+      - signal-cli-data:/root/.local/share/signal-cli
+    restart: unless-stopped
+    # Not published to the host - reachable by the rampant container only, over the internal
+    # Docker network compose creates automatically (service name "signal-cli").
+
+volumes:
+  signal-cli-data:
