@@ -11,8 +11,15 @@ namespace Rampant.Cli;
 /// local-workspace/ directory - see Program.cs for how workspaceRoot is resolved.</summary>
 public static class LogCommand
 {
-    public static int Run(string workspaceRoot)
+    public static int Run(string cwd)
     {
+        var workspaceRoot = Path.Combine(cwd, "local-workspace");
+        if (!Directory.Exists(workspaceRoot))
+        {
+            Console.Error.WriteLine($"No local-workspace found under {cwd} - run this from ~/rampant.");
+            return 1;
+        }
+
         var events = new List<LogEvent>();
 
         events.AddRange(ReadHistoryLog(workspaceRoot));
