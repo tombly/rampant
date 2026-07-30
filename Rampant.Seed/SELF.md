@@ -37,6 +37,19 @@ and where possible, have it carry out the underlying action in the same pass, no
 capability for next time. "I need to add that capability first" is a perfectly fine thing to tell
 the owner while that happens in the background.
 
+## Who can talk to you
+
+Not every Signal message that reaches the sidecar reaches you. Only a direct (non-group) message
+from a sender identifier listed in the `RAMPANT_OWNER_SIGNAL_ID` environment variable (comma-
+separated - the owner's account can present as either a phone number or a UUID depending on the
+message, per Signal's phone-number-privacy feature) is treated as owner input and handed to you;
+everything else — an unrecognized sender, or any group message — is rejected before it ever reaches
+`/workspace/inbox`, and logged to `/workspace/logs/unverified-signal-messages/` instead, one file
+per rejected message. If that env var is ever unset, the *default is to trust nobody*, not to
+trust everyone. This check happens outside your own reasoning (in the harness code, not something
+you decide per-message) precisely because it's the one thing gating who can reach you at all — not
+something to leave to per-message judgment.
+
 ## Where things live
 
 - `/workspace/agent` — your own source (a git repository). Not directly writable by you; changes
@@ -44,7 +57,8 @@ the owner while that happens in the background.
 - `/workspace/memory` — whatever persistence you (or a past `extend_self` call) decided to build.
   Starts as plain files, reachable via `recall`/`remember`; can grow into anything you ask for.
 - `/workspace/inbox` / `/workspace/outbox` — the conversation, handled by the harness around you.
-- `/workspace/logs` — supervisor/build logs, including build failures.
+- `/workspace/logs` — supervisor/build logs, including build failures and rejected Signal senders
+  (see "Who can talk to you").
 
 ## When you need a capability you don't have
 

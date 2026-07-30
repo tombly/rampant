@@ -24,16 +24,42 @@ public sealed class AgentLoop
     private const string HeartbeatLogPath = "/workspace/logs/heartbeat.log";
 
     private const string SignalFilePrefix = "signal-";
+    private const string UnverifiedSignalLogDir = "/workspace/logs/unverified-signal-messages";
+
+    // Who's allowed to be treated as "the owner" over Signal. The signal-cli sidecar is a single
+    // linked account, but that account still receives DMs from any contact and messages in any
+    // group it's a member of - without this check, anyone who texts the linked number gets full
+    // owner trust (extend_self, remember, etc.), not just the one person who's supposed to. This
+    // is baseline access control for the sole interaction channel into a self-modifying,
+    // bypassPermissions system - deliberately baked in here rather than left for extend_self to
+    // rebuild from scratch on every fresh genesis (it did, twice in testing, with a materially
+    // different - and once incomplete, missing group-message rejection entirely - result each
+    // time; not something worth leaving to chance for the one thing gating who can talk to the
+    // agent at all).
+    //
+    // Comma-separated list of accepted sender identifiers (phone number and/or UUID - see
+    // SignalClient.HandleLineAsync for why the same linked account can present as either), read
+    // once at startup. Unset/empty means fail closed: nobody is trusted, not "everybody is".
+    private const string OwnerIdEnvVar = "RAMPANT_OWNER_SIGNAL_ID";
 
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
 
     private readonly RampantBrain _brain = new(new ClaudeCodeRunner());
     private readonly SignalClient _signal = new(host: "signal-cli", port: 7583);
     private readonly SemaphoreSlim _wake = new(0);
+    private readonly HashSet<string> _allowedOwnerIds = LoadAllowedOwnerIds();
 
     public async Task RunAsync(CancellationToken shutdownToken)
     {
         EnsureDirectories();
+
+        if (_allowedOwnerIds.Count == 0)
+        {
+            await AppendLineAsync(
+                HeartbeatLogPath,
+                $"{DateTimeOffset.UtcNow:O} WARNING: {OwnerIdEnvVar} is not set - every inbound Signal message will be ignored (failing closed) until it's configured. See SELF.md.",
+                CancellationToken.None);
+        }
 
         _ = Task.Run(() => _signal.RunAsync(
             OnSignalMessageReceivedAsync,
@@ -77,19 +103,64 @@ public sealed class AgentLoop
         await cts.CancelAsync();
     }
 
-    /// <summary>Called from the Signal listener's background task - just materializes the
-    /// message as a local inbox file (same convention the old mailbox used) and wakes the cycle
-    /// loop. The sender's identifier (phone number or, often, just their UUID - see
-    /// SignalClient.HandleLineAsync) is encoded in the filename so the reply goes back to the
-    /// right place; see <see cref="TryGetSignalSender"/>. Both forms are filename-safe as-is
-    /// (digits/+ for a number, hyphenated digits for a UUID), so no sanitizing is needed.</summary>
-    private async Task OnSignalMessageReceivedAsync(string senderIdentifier, string text)
+    /// <summary>Called from the Signal listener's background task for every inbound message,
+    /// trusted or not. Only a direct (non-group) message from an allowlisted sender identifier is
+    /// materialized as a local inbox file and treated as owner input - everything else is
+    /// rejected here and never reaches /workspace/inbox, since anything that lands there gets full
+    /// owner trust (extend_self, remember, etc.) in the cycle loop. See
+    /// <see cref="LoadAllowedOwnerIds"/> for how the allowlist is configured. The sender's
+    /// identifier (phone number or, often, just their UUID - see SignalClient.HandleLineAsync) is
+    /// encoded in the inbox filename so the reply goes back to the right place; see
+    /// <see cref="TryGetSignalSender"/>. Both forms are filename-safe as-is (digits/+ for a
+    /// number, hyphenated digits for a UUID), so no sanitizing is needed.</summary>
+    private async Task OnSignalMessageReceivedAsync(string senderIdentifier, string text, bool isGroupMessage)
     {
         var timestamp = DateTimeOffset.UtcNow;
+
+        if (isGroupMessage)
+        {
+            await LogUnverifiedSenderAsync(senderIdentifier, text, timestamp, "group message");
+            return;
+        }
+
+        if (!_allowedOwnerIds.Contains(senderIdentifier))
+        {
+            await LogUnverifiedSenderAsync(senderIdentifier, text, timestamp, $"sender not in {OwnerIdEnvVar}");
+            return;
+        }
+
         var path = Path.Combine(InboxDir, $"{SignalFilePrefix}{senderIdentifier}_{timestamp:yyyyMMdd-HHmmss-fffffff}.txt");
 
         await File.WriteAllTextAsync(path, text);
         _wake.Release();
+    }
+
+    /// <summary>Reads <see cref="OwnerIdEnvVar"/>: a comma-separated list of Signal sender
+    /// identifiers (phone numbers and/or UUIDs) that are trusted as "the owner". Multiple entries
+    /// are for the *same* person's account presenting differently across messages (see
+    /// SignalClient.HandleLineAsync - sourceNumber is often null due to Signal's phone-number
+    /// privacy feature, falling back to sourceUuid), not for trusting multiple people. Comparison
+    /// is case-insensitive since UUIDs can vary in case. Empty/unset means fail closed - no sender
+    /// is trusted - rather than trusting everyone.</summary>
+    private static HashSet<string> LoadAllowedOwnerIds()
+    {
+        var raw = Environment.GetEnvironmentVariable(OwnerIdEnvVar);
+        if (string.IsNullOrWhiteSpace(raw))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Rejected messages (untrusted sender or group traffic) are never silently dropped
+    /// without a trace - they're recorded here instead, one file per message, so a real
+    /// misconfiguration (wrong/unset RAMPANT_OWNER_SIGNAL_ID) is discoverable rather than
+    /// presenting as "the bot just doesn't reply to anyone."</summary>
+    private static async Task LogUnverifiedSenderAsync(string senderIdentifier, string text, DateTimeOffset timestamp, string reason)
+    {
+        Directory.CreateDirectory(UnverifiedSignalLogDir);
+        var path = Path.Combine(UnverifiedSignalLogDir, $"{timestamp:yyyyMMdd-HHmmss-fffffff}_{senderIdentifier}.txt");
+        await File.WriteAllTextAsync(path, $"reason: {reason}{Environment.NewLine}{text}");
     }
 
     private async Task RunOneCycleAsync(CancellationToken ct)
@@ -183,7 +254,7 @@ public sealed class AgentLoop
 
     private static void EnsureDirectories()
     {
-        foreach (var dir in new[] { InboxDir, InboxProcessedDir, OutboxDir, MemoryDir, LogsDir })
+        foreach (var dir in new[] { InboxDir, InboxProcessedDir, OutboxDir, MemoryDir, LogsDir, UnverifiedSignalLogDir })
             Directory.CreateDirectory(dir);
     }
 

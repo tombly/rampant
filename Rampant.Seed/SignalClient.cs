@@ -11,11 +11,12 @@ public sealed class SignalClient(string host, int port)
 {
     /// <summary>Listens forever, reconnecting with a fixed backoff if the sidecar is unreachable
     /// or the connection drops. Calls <paramref name="onMessageReceived"/> for every incoming
-    /// text message (sender identifier, message text). <paramref name="onError"/> is optional
-    /// diagnostic logging for connection failures - a silent catch here previously masked a real
-    /// bug (a message-parsing early-return) for long enough that it needed a raw TCP capture to
-    /// diagnose; don't repeat that.</summary>
-    public async Task RunAsync(Func<string, string, Task> onMessageReceived, CancellationToken ct, Func<Exception, Task>? onError = null)
+    /// text message (sender identifier, message text, whether it arrived via a group rather than
+    /// a direct message - see the caller for why that matters). <paramref name="onError"/> is
+    /// optional diagnostic logging for connection failures - a silent catch here previously masked
+    /// a real bug (a message-parsing early-return) for long enough that it needed a raw TCP
+    /// capture to diagnose; don't repeat that.</summary>
+    public async Task RunAsync(Func<string, string, bool, Task> onMessageReceived, CancellationToken ct, Func<Exception, Task>? onError = null)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -46,7 +47,7 @@ public sealed class SignalClient(string host, int port)
         }
     }
 
-    private static async Task HandleLineAsync(string line, Func<string, string, Task> onMessageReceived)
+    private static async Task HandleLineAsync(string line, Func<string, string, bool, Task> onMessageReceived)
     {
         using var doc = JsonDocument.Parse(line);
         var root = doc.RootElement;
@@ -76,7 +77,13 @@ public sealed class SignalClient(string host, int port)
         if (string.IsNullOrWhiteSpace(source))
             return;
 
-        await onMessageReceived(source, text);
+        // A dataMessage carries a "groupInfo" object when it was sent to/via a group rather than
+        // as a direct message - the caller uses this to reject group traffic outright, since
+        // there's no evidence group messages are how the owner actually talks to this agent, and a
+        // group's membership is a much wider trust surface than a single linked account's DMs.
+        var isGroupMessage = dataMessage.TryGetProperty("groupInfo", out _);
+
+        await onMessageReceived(source, text, isGroupMessage);
     }
 
     /// <summary>Each send opens its own short-lived connection rather than sharing the listener's
