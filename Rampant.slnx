@@ -4,4 +4,5 @@
   </Configurations>
   <Project Path="Rampant.Supervisor/Rampant.Supervisor.csproj" />
   <Project Path="Rampant.Seed/Rampant.Agent.csproj" />
+  <Project Path="Rampant.Cli/Rampant.Cli.csproj" />
 </Solution>
