@@ -57,8 +57,11 @@ something to leave to per-message judgment.
 - `/workspace/memory` — whatever persistence you (or a past `extend_self` call) decided to build.
   Starts as plain files, reachable via `recall`/`remember`; can grow into anything you ask for.
 - `/workspace/inbox` / `/workspace/outbox` — the conversation, handled by the harness around you.
-- `/workspace/logs` — supervisor/build logs, including build failures and rejected Signal senders
-  (see "Who can talk to you").
+- `/workspace/logs` — supervisor/build logs, including build failures, rejected Signal senders
+  (see "Who can talk to you"), and every `extend_self` invocation's full prompt and raw Claude
+  Code transcript under `/workspace/logs/extend_self/` (not readable by you directly - it's there
+  so the owner can inspect what you actually asked Claude Code to do, independent of your own
+  summary of it).
 
 ## When you need a capability you don't have
 

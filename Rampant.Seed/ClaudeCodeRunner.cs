@@ -12,6 +12,8 @@ public sealed record ClaudeCodeResult(bool Success, string Output, string ErrorO
 /// </summary>
 public sealed class ClaudeCodeRunner
 {
+    private const string LogDir = "/workspace/logs/extend_self";
+
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(10);
 
     public async Task<ClaudeCodeResult> RunAsync(string prompt, CancellationToken ct)
@@ -63,13 +65,17 @@ public sealed class ClaudeCodeRunner
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             process.Kill(entireProcessTree: true);
-            return new ClaudeCodeResult(false, string.Empty, $"claude timed out after {Timeout}");
+            var timeoutResult = new ClaudeCodeResult(false, string.Empty, $"claude timed out after {Timeout}");
+            await LogInvocationAsync(prompt, timeoutResult);
+            return timeoutResult;
         }
 
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
+        var result = new ClaudeCodeResult(process.ExitCode == 0, stdout, stderr);
 
-        return new ClaudeCodeResult(process.ExitCode == 0, stdout, stderr);
+        await LogInvocationAsync(prompt, result);
+        return result;
     }
 
     private static void CopyIfSet(ProcessStartInfo psi, string variable)
@@ -77,5 +83,29 @@ public sealed class ClaudeCodeRunner
         var value = Environment.GetEnvironmentVariable(variable);
         if (!string.IsNullOrEmpty(value))
             psi.EnvironmentVariables[variable] = value;
+    }
+
+    /// <summary>Every extend_self invocation - the full prompt sent and Claude Code's complete
+    /// raw stdout/stderr - is otherwise invisible: it's handed straight back into RampantBrain's
+    /// tool loop and discarded the moment this call returns, leaving only whatever summary the
+    /// model chooses to narrate. Persisting it here (mirroring the existing
+    /// /workspace/logs/build-failures/ pattern) makes every self-modification attempt SSH-
+    /// inspectable after the fact, independent of the model's own account of what happened.
+    /// Deliberately CancellationToken.None and best-effort (swallows its own failures) - a
+    /// logging problem must never affect the actual extend_self result already computed above.
+    /// </summary>
+    private static async Task LogInvocationAsync(string prompt, ClaudeCodeResult result)
+    {
+        try
+        {
+            Directory.CreateDirectory(LogDir);
+            var path = Path.Combine(LogDir, $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.log");
+            var content = $"PROMPT:\n{prompt}\n\nSUCCESS: {result.Success}\n\nSTDOUT:\n{result.Output}\n\nSTDERR:\n{result.ErrorOutput}";
+            await File.WriteAllTextAsync(path, content, CancellationToken.None);
+        }
+        catch
+        {
+            // Best-effort - see doc comment above.
+        }
     }
 }
