@@ -28,6 +28,16 @@ public sealed class RampantBrain(ClaudeCodeRunner claudeCode)
     {
         var model = Environment.GetEnvironmentVariable("RAMPANT_MODEL") ?? "claude-sonnet-5";
 
+        // The current date/time has no other reliable source in this loop - there's no live
+        // clock tool, and web_search only ever turns up stale cached snapshots (confirmed live:
+        // asked cold, the model guessed a UTC time off by about a day). Injecting it directly
+        // into the system prompt here, once per turn, means it's ambient context rather than
+        // something the model has to think to look up (and has no good way to look up if it
+        // does). Computed once at the top of the turn, not re-read per tool-loop iteration, so it
+        // reflects "when this turn started" consistently even if a slow extend_self call is in
+        // flight.
+        var system = $"Current date/time: {DateTimeOffset.UtcNow:R} (UTC).\n\n{selfMd}";
+
         List<MessageParam> messages = [new() { Role = Role.User, Content = userMessage }];
 
         for (var iteration = 0; iteration < MaxToolIterations; iteration++)
@@ -36,7 +46,7 @@ public sealed class RampantBrain(ClaudeCodeRunner claudeCode)
             {
                 Model = model,
                 MaxTokens = 4096,
-                System = selfMd,
+                System = system,
                 Tools = [
                     new ToolUnion(new WebSearchTool20260209()),
                     new ToolUnion(new WebFetchTool20260209()),
