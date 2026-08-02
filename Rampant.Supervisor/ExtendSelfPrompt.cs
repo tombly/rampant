@@ -130,6 +130,22 @@ public static class ExtendSelfPrompt
             be, change core files and say plainly in your final message which ones and why - that
             text is what the owner reads when deciding.
 
+            ## Update SELF.md - this is not optional
+
+            SELF.md is the agent's system prompt, rebuilt from that file on every single turn. If
+            you add or change what it can do and leave SELF.md alone, the agent carries on believing
+            the old description of itself and will tell the owner it cannot do the thing you just
+            built. That is not hypothetical: a memory capability was added while SELF.md still said
+            "You have no memory... say plainly that you do not remember and ask them to remind you",
+            and the agent dutifully disclaimed its own new tools six times in a row while the owner
+            grew increasingly frustrated.
+
+            So: read SELF.md, find every statement your change has made false, and correct it. Add a
+            short description of the new capability and when to reach for it. Keep the voice and
+            structure of the file - it is written to be read by the agent as a description of itself,
+            not as release notes. SELF.md is in the auto-deploy set, so editing it costs no extra
+            approval.
+
             ## Finishing
 
             - `dotnet build` in /workspace/agent must succeed. A commit that does not compile is
