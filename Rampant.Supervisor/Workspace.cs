@@ -38,9 +38,10 @@ public static class Workspace
     /// fail at runtime in a way the agent has no way to observe.</summary>
     public const string Data = "/workspace/data";
 
-    /// <summary>Capability requests the agent files. Agent-owned, so the supervisor moves each one
-    /// out to <see cref="StateProcessing"/> the moment it picks it up - a request must not be
-    /// mutable while it is being acted on.</summary>
+    /// <summary>Requests the agent files - capabilities it wants built, and revisions to its own
+    /// SELF.md. Agent-owned, so the supervisor moves each one out to <see cref="StateProcessing"/>
+    /// the moment it picks it up - a request must not be mutable while it is being acted on.
+    /// </summary>
     public const string RequestsIn = "/workspace/requests/in";
 
     // --- Root-owned, agent-readable ------------------------------------------------------------

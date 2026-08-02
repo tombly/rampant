@@ -12,8 +12,10 @@ public enum InboxKind
     /// response most of the time.</summary>
     Wake,
 
-    /// <summary>A capability request the agent's *predecessor* filed has reached a terminal state.
-    /// Carries the original conversation back across the restart boundary.</summary>
+    /// <summary>A request the agent filed has reached a terminal state. For a capability that means
+    /// its *predecessor* filed it - deploying restarts the process - so the envelope carries the
+    /// original conversation back across the restart boundary. A self-description revision restarts
+    /// nothing, so there the filer and the reader are the same process.</summary>
     Outcome,
 }
 

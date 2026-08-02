@@ -8,7 +8,7 @@ public sealed record ClaudeCodeResult(bool Success, string Summary, decimal Cost
 
 public interface IClaudeCodeRunner
 {
-    Task<ClaudeCodeResult> RunAsync(CapabilityRequest request, CancellationToken ct);
+    Task<ClaudeCodeResult> RunAsync(AgentRequest request, CancellationToken ct);
 }
 
 /// <summary>
@@ -23,7 +23,7 @@ public interface IClaudeCodeRunner
 /// </summary>
 public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCodeRunner> _logger) : IClaudeCodeRunner
 {
-    public async Task<ClaudeCodeResult> RunAsync(CapabilityRequest request, CancellationToken ct)
+    public async Task<ClaudeCodeResult> RunAsync(AgentRequest request, CancellationToken ct)
     {
         var prompt = ExtendSelfPrompt.Build(request);
 
@@ -63,8 +63,8 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
         psi.EnvironmentVariables["ANTHROPIC_API_KEY"] = _config.AnthropicApiKey ?? string.Empty;
 
         _logger.LogInformation(
-            "Invoking Claude Code for request {Id} ({Capability}), model {Model}, cap ${Cap:0.00}",
-            request.Id, request.Capability, _config.ClaudeModel, _config.MaxBudgetPerInvocationUsd);
+            "Invoking Claude Code for request {Id} ({Subject}), model {Model}, cap ${Cap:0.00}",
+            request.Id, request.Subject, _config.ClaudeModel, _config.MaxBudgetPerInvocationUsd);
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start claude process.");
@@ -168,7 +168,7 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
     ///
     /// Best-effort and on CancellationToken.None: a logging failure must never affect a result that
     /// has already been computed and already cost money.</summary>
-    private async Task LogInvocationAsync(CapabilityRequest request, string prompt, ClaudeCodeResult result)
+    private async Task LogInvocationAsync(AgentRequest request, string prompt, ClaudeCodeResult result)
     {
         try
         {

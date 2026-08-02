@@ -345,6 +345,43 @@ to finish the job: the capability wanted, the sender to reply to, the owner's or
 verbatim, and the timestamp it arrived. Without that the next process has no idea a conversation
 happened, and with no memory in genesis there is nowhere else for that context to live.
 
+### Self-description revisions — the third tier (added 2026-08-02)
+
+`SELF.md` is prose, and `AgentBrain` re-reads it from disk at the top of every turn. Changing it
+needs no model, no compiler and no restart. Yet until this existed the only way to change it was a
+full Claude Code session: up to $1 and 45 minutes of cooldown to rewrite a paragraph — the most
+expensive path in the system, spent on the one change this plan explicitly says the agent may make
+without anyone's approval. The tiers were mis-shaped, not the policy.
+
+So `revise_self_description` is a second genesis tool. It files a `SelfDescription` request that
+skips `ClaudeCodeRunner` entirely: the supervisor rewrites one `## ` section, commits it, and
+returns `Revised`. Free, and live on the agent's next turn — and because nothing restarts, it is
+the *same* process that filed it which sees the outcome, unlike every other request.
+
+Three things it deliberately does **not** do:
+
+- **It is not a file write handed to the agent.** The agent runs as `agentrunner`; the repo is
+  owned by `builder`. Routing through the supervisor keeps git history (so any revision can be read
+  back or reverted), a single writer (so a revision cannot race a Claude Code run), and a record in
+  `requests/out` that `rampant log` surfaces — self-rewriting stays visible rather than silent.
+- **It is not whole-file replacement.** A model asked to reproduce a 150-line file in order to
+  change one paragraph will quietly lose or reword the rest, and nothing in the pipeline would
+  notice. Section-at-a-time bounds the blast radius and keeps the request small enough to read in
+  full in the outcome log.
+- **It is not exempt from the approval block.** A revision commits, and denying a held change
+  resets the repo to before it — which would take an unrelated revision down with it. Revisions are
+  refused while an approval is outstanding, same as everything else.
+
+Bounded by a hard character cap on the resulting file: `SELF.md` is prepended to every turn, so an
+agent that appends a little each time pays for it forever, and nothing else meters that side.
+
+**The open question this creates.** The honesty rules and "you may not become unreachable" live
+*inside* `SELF.md`, and the agent may now rewrite any section of it for free. That was defensible
+when a rewrite cost a build; it is a live question now. If some floor must survive arbitrary
+self-revision, the place for it is the supervisor-side text `AgentBrain` appends *after* the file —
+already where the clock and the spend standing go, and already unreachable. Not drawn yet, and
+deliberately so: tenet 1 says purpose is allowed to drift.
+
 ### The round trip the owner actually sees
 
 ```

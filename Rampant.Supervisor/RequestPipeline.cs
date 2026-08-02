@@ -54,8 +54,16 @@ public sealed class RequestPipeline(
         return request is null ? null : await ProcessAsync(request, ct);
     }
 
-    private async Task<string?> ProcessAsync(CapabilityRequest request, CancellationToken ct)
+    private async Task<string?> ProcessAsync(AgentRequest request, CancellationToken ct)
     {
+        // Before the ledger, because a revision costs nothing and refusing it on budget or cooldown
+        // would be refusing it for a reason that does not apply. It is still refused while an
+        // approval is outstanding - the guard in RunOnceAsync catches it upstream - because a
+        // revision commits, and a later "deny" resets the repo to before the held change, which
+        // would take an unrelated revision down with it.
+        if (request.Kind == RequestKind.SelfDescription)
+            return await ReviseSelfDescriptionAsync(request, ct);
+
         var verdict = await _ledger.EvaluateAsync(ct);
         if (!verdict.Allowed)
         {
@@ -140,11 +148,92 @@ public sealed class RequestPipeline(
         return await BuildAndDeployAsync(request, result.Summary, result.CostUsd, changed, preSha, CancellationToken.None);
     }
 
+    /// <summary>
+    /// The cheap tier. SELF.md is prose that AgentBrain re-reads from disk on every turn, so a
+    /// change to it needs no model, no compiler and no restart - yet until this existed the only
+    /// way to alter it was a full Claude Code session costing up to $1 and 45 minutes of cooldown.
+    /// That was the most expensive path in the system being used for the one change PLAN-V2 says
+    /// the agent may make without anyone's approval.
+    ///
+    /// Still routed through the supervisor rather than handed to the agent as a file write. The
+    /// agent runs as agentrunner and /workspace/agent is owned by builder, and keeping it that way
+    /// preserves three things worth more than the round trip costs: git history, so any revision
+    /// can be read back or reverted; a single writer, so a revision cannot race a Claude Code run;
+    /// and a record in requests/out that `rampant log` surfaces, so self-rewriting is visible
+    /// rather than silent.
+    /// </summary>
+    private async Task<string?> ReviseSelfDescriptionAsync(AgentRequest request, CancellationToken ct)
+    {
+        var path = Path.Combine(Workspace.AgentRepo, "SELF.md");
+        if (!File.Exists(path))
+        {
+            await CompleteAsync(request, RequestStatus.Failed, "There is no SELF.md to revise.", 0m, [], ct);
+            return null;
+        }
+
+        var current = await File.ReadAllTextAsync(path, ct);
+        var revision = SelfDescription.Apply(current, request.Subject, request.NewText ?? string.Empty);
+
+        if (!revision.Ok)
+        {
+            _logger.LogInformation("Rejected self-description revision {Id}: {Error}", request.Id, revision.Error);
+            await CompleteAsync(request, RequestStatus.Failed, revision.Error!, 0m, [], ct);
+            return null;
+        }
+
+        // Written in place rather than tmp+rename. A rename would leave a root-owned SELF.md in a
+        // builder-owned tree, and the next Claude Code run could no longer update it - which is
+        // exactly the drift that ExtendSelfPrompt now exists to prevent.
+        await File.WriteAllTextAsync(path, revision.Text!, ct);
+
+        await Git.RunAsync(Workspace.AgentRepo, ct, "add", "SELF.md");
+        var commit = await Git.RunWithStdinAsync(
+            Workspace.AgentRepo,
+            $"""
+            Revise SELF.md: {(revision.WasNewSection ? "add" : "rewrite")} "{request.Subject}"
+
+            The agent's own words on why:
+            {request.Description.Trim()}
+            """,
+            ct, "commit", "-F", "-");
+
+        if (!commit.Success)
+        {
+            _logger.LogWarning("Could not commit self-description revision {Id}: {Error}", request.Id, commit.Combined);
+            await CompleteAsync(request, RequestStatus.Failed, "The revision could not be committed and was not applied.", 0m, [], ct);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "SELF.md revised for request {Id}: {Action} \"{Section}\"",
+            request.Id, revision.WasNewSection ? "added" : "rewrote", request.Subject);
+
+        await CompleteAsync(
+            request,
+            RequestStatus.Revised,
+            $"""
+            SELF.md now {(revision.WasNewSection ? "has a new section" : "has a rewritten section")} called "{request.Subject}".
+
+            This is already in effect - your description of yourself is read fresh at the start of
+            every turn, so the next thing you are asked will use the new text. Nothing was built and
+            nothing restarted, so unlike a capability request you are the same process that filed it.
+            """,
+            0m,
+            ["SELF.md"],
+            ct);
+
+        // Recorded as built even though nothing was compiled. SELF.md is not an input to the
+        // compiler, so the binary already running is byte-for-byte what a build of this commit
+        // would produce - and leaving the sha unrecorded would make the next container start
+        // rebuild for no reason and log it as if code had changed.
+        return await Git.HeadShaAsync(Workspace.AgentRepo, ct);
+    }
+
     /// <summary>Rolls the commit back if it left a package version floating, and tells the agent
     /// how to get it right next time. A mechanical mistake with an obvious fix should not cost the
     /// owner a decision, so this fails the request rather than queueing an approval.</summary>
     private async Task<bool> RejectUnpinnedPackagesAsync(
-        CapabilityRequest request,
+        AgentRequest request,
         IReadOnlyList<string> changed,
         string preSha,
         decimal costUsd,
@@ -184,7 +273,7 @@ public sealed class RequestPipeline(
     }
 
     private async Task<string?> BuildAndDeployAsync(
-        CapabilityRequest request,
+        AgentRequest request,
         string summary,
         decimal costUsd,
         IReadOnlyList<string> changed,
@@ -220,7 +309,7 @@ public sealed class RequestPipeline(
     }
 
     private async Task HoldForApprovalAsync(
-        CapabilityRequest request,
+        AgentRequest request,
         ClaudeCodeResult result,
         PolicyVerdict policy,
         IReadOnlyList<string> changed,
@@ -239,7 +328,7 @@ public sealed class RequestPipeline(
         var message = $"""
             Rampant wants to change its own core and needs your OK.
 
-            It asked for: {request.Capability}
+            It asked for: {request.Subject}
             {Truncate(request.Description, 400)}
 
             Claude Code says it did:
@@ -317,7 +406,7 @@ public sealed class RequestPipeline(
 
     /// <summary>Moves the oldest request out of the agent-writable directory before touching it -
     /// a request must not be mutable while it is being acted on.</summary>
-    private async Task<CapabilityRequest?> TakeNextRequestAsync(CancellationToken ct)
+    private async Task<AgentRequest?> TakeNextRequestAsync(CancellationToken ct)
     {
         if (!Directory.Exists(Workspace.RequestsIn))
             return null;
@@ -335,15 +424,15 @@ public sealed class RequestPipeline(
         File.Move(file, moved, overwrite: true);
 
         var json = await File.ReadAllTextAsync(moved, ct);
-        var request = CapabilityRequest.TryParse(json);
+        var request = AgentRequest.TryParse(json);
 
         if (request is null)
         {
-            _logger.LogWarning("Discarding unparseable capability request {File}", Path.GetFileName(file));
+            _logger.LogWarning("Discarding unparseable request {File}", Path.GetFileName(file));
             return null;
         }
 
-        _logger.LogInformation("Picked up request {Id}: {Capability}", request.Id, request.Capability);
+        _logger.LogInformation("Picked up {Kind} request {Id}: {Subject}", request.Kind, request.Id, request.Subject);
         return request;
     }
 
@@ -351,7 +440,7 @@ public sealed class RequestPipeline(
     /// cap, timeout) can leave the tree dirty. Committing it here means the diff the path policy
     /// sees is the complete set of changes, and the repo is never left in a state where the next
     /// request builds on top of someone else's half-finished work.</summary>
-    private async Task CommitLeftoversAsync(CapabilityRequest request, CancellationToken ct)
+    private async Task CommitLeftoversAsync(AgentRequest request, CancellationToken ct)
     {
         if (!await Git.IsDirtyAsync(Workspace.AgentRepo, ct))
             return;
@@ -370,14 +459,14 @@ public sealed class RequestPipeline(
     /// silence, because from the owner's side a silent failure and a slow success look
     /// identical.</summary>
     private async Task CompleteAsync(
-        CapabilityRequest request,
+        AgentRequest request,
         RequestStatus status,
         string detail,
         decimal costUsd,
         IReadOnlyList<string> changed,
         CancellationToken ct)
     {
-        var outcome = new RequestOutcome(request.Id, request.Capability, status, detail, DateTimeOffset.UtcNow, costUsd, changed);
+        var outcome = new RequestOutcome(request.Id, request.Subject, status, detail, DateTimeOffset.UtcNow, costUsd, changed);
 
         Directory.CreateDirectory(Workspace.RequestsOut);
         await File.WriteAllTextAsync(Path.Combine(Workspace.RequestsOut, $"{request.Id}.json"), outcome.ToJson(), ct);
@@ -396,11 +485,13 @@ public sealed class RequestPipeline(
     /// <summary>The envelope text is what the model actually reads, so it says what happened and
     /// what to do about it - the point is not to report a status but to finish the thing the owner
     /// originally asked for.</summary>
-    private static string BuildOutcomeText(CapabilityRequest request, RequestOutcome outcome)
+    private static string BuildOutcomeText(AgentRequest request, RequestOutcome outcome)
     {
         var lines = new List<string>
         {
-            $"A capability you asked for has come back: \"{request.Capability}\".",
+            request.Kind == RequestKind.SelfDescription
+                ? $"A revision you made to your own description has come back: the \"{request.Subject}\" section."
+                : $"A capability you asked for has come back: \"{request.Subject}\".",
             string.Empty,
             $"Result: {outcome.Status}",
             outcome.Detail,
@@ -412,9 +503,19 @@ public sealed class RequestPipeline(
             lines.Add($"You asked for this because the owner said, at {request.OriginalMessageUtc:yyyy-MM-dd HH:mm:ss} UTC:");
             lines.Add($"\"{request.OriginalMessage.Trim()}\"");
             lines.Add(string.Empty);
-            lines.Add(outcome.Status == RequestStatus.Deployed
-                ? "You have the capability now. Do the thing they actually asked for - using it, not describing it - and then tell them it's done. If their request was time-relative, it is relative to when they sent that message, not to now."
-                : "Tell them where things stand, briefly and honestly. Do not claim to have done anything you could not do.");
+            lines.Add(outcome.Status switch
+            {
+                RequestStatus.Deployed =>
+                    "You have the capability now. Do the thing they actually asked for - using it, not describing it - and then tell them it's done. If their request was time-relative, it is relative to when they sent that message, not to now.",
+
+                // A revision needs no announcement. The owner asked for a behaviour, not a file
+                // edit, and "I have updated my own documentation" is not an answer to anything they
+                // said - it is the system talking about itself.
+                RequestStatus.Revised =>
+                    "That is already in force. Answer what they actually said; mention the revision only if they asked about it directly.",
+
+                _ => "Tell them where things stand, briefly and honestly. Do not claim to have done anything you could not do.",
+            });
         }
         else
         {

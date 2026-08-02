@@ -19,7 +19,7 @@ public enum InboxKind
 
 public sealed record OutcomeDetail(
     string RequestId,
-    string Capability,
+    string Subject,
     string Status,
     string Detail,
     DateTimeOffset CompletedUtc,

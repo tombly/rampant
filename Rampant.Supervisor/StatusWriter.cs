@@ -54,7 +54,7 @@ public sealed class StatusWriter(SupervisorConfig _config, SpendLedger _ledger, 
                 ? Math.Round((DateTimeOffset.UtcNow - last).TotalHours, 2)
                 : null,
             PendingApprovalToken: pending?.Token,
-            PendingApprovalSummary: pending is null ? null : $"{pending.Request.Capability} ({pending.TouchedSummary})");
+            PendingApprovalSummary: pending is null ? null : $"{pending.Request.Subject} ({pending.TouchedSummary})");
 
         Directory.CreateDirectory(Workspace.RequestsOut);
         var tmp = Workspace.StatusFile + ".tmp";

@@ -116,7 +116,7 @@ public static class LogCommand
             yield return new LogEvent(
                 ts,
                 "request",
-                $"{Field(content, "status")}{costSuffix} \"{Field(content, "capability")}\" ({relativePath})");
+                $"{Field(content, "status")}{costSuffix} \"{Field(content, "subject")}\" ({relativePath})");
         }
     }
 

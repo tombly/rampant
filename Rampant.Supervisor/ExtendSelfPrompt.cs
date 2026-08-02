@@ -14,7 +14,7 @@ namespace Rampant.Supervisor;
 /// </summary>
 public static class ExtendSelfPrompt
 {
-    public static string Build(CapabilityRequest request)
+    public static string Build(AgentRequest request)
     {
         var sb = new StringBuilder();
 
@@ -35,7 +35,7 @@ public static class ExtendSelfPrompt
             """);
 
         sb.AppendLine();
-        sb.AppendLine($"Capability: {request.Capability}");
+        sb.AppendLine($"Capability: {request.Subject}");
         sb.AppendLine();
         sb.AppendLine("In the agent's own words:");
         sb.AppendLine();
@@ -145,6 +145,18 @@ public static class ExtendSelfPrompt
             structure of the file - it is written to be read by the agent as a description of itself,
             not as release notes. SELF.md is in the auto-deploy set, so editing it costs no extra
             approval.
+
+            Then do the harder half: find the places your change has made *incomplete* rather than
+            false. Anywhere SELF.md tells the agent to consider, decide or judge something that this
+            capability now gives it a way to actually check, that instruction is out of date even
+            though every sentence in it is still true. Update those too.
+
+            This is the part that gets missed, twice in a row so far. A notes capability was added,
+            and then a conversation-history capability, and both times the paragraph describing what
+            to do on a scheduled wake tick was left exactly as written - still saying to consider
+            whether there was "a follow-up" to chase, while pointing at neither of the two mechanisms
+            the agent had just been given for finding one. The owner had literally left a note saying
+            to work on something later, and three wake ticks passed without it being read.
 
             ## Finishing
 

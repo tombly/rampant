@@ -8,7 +8,7 @@ public enum ApprovalDecision { Approved, Denied }
 
 public sealed record PendingApproval(
     string Token,
-    CapabilityRequest Request,
+    AgentRequest Request,
     string ClaudeSummary,
     string TouchedSummary,
     IReadOnlyList<string> ChangedPaths,
