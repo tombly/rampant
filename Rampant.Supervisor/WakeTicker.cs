@@ -71,7 +71,16 @@ public sealed class WakeTicker(SupervisorConfig _config, ILogger<WakeTicker> _lo
         if (!IsWithinWakeWindow(now))
             return state;
 
-        if (state.LastWakeTickUtc is { } last && now - last < _config.WakeInterval)
+        // Fire at most once per clock slot, rather than one interval after the previous tick.
+        // Measuring from the last tick makes the schedule drift: every restart moves it, so an
+        // hourly tick that started at 15:00 becomes 16:23 after a redeploy and stays there. Slots
+        // are anchored to local midnight, so an hourly interval lands on the hour and a 15-minute
+        // one lands on :00/:15/:30/:45, whatever time the supervisor happened to start.
+        //
+        // This also keeps the property the window check above depends on: when the window opens at
+        // 06:00 the slot has certainly advanced since the last tick the previous evening, so the
+        // first tick of the day is prompt rather than an interval late.
+        if (state.LastWakeTickUtc is { } last && SlotOf(now) <= SlotOf(last))
             return state;
 
         // First boot: start the clock rather than firing immediately. A tick seconds after
@@ -83,6 +92,31 @@ public sealed class WakeTicker(SupervisorConfig _config, ILogger<WakeTicker> _lo
         await new InboxEnvelope(InboxKind.Wake, now, Sender: null, BuildText()).WriteAsync(ct);
 
         return state with { LastWakeTickUtc = now };
+    }
+
+    /// <summary>
+    /// The start of the interval slot a moment falls in, expressed in the owner's local time.
+    ///
+    /// Local rather than UTC because "on the hour" means on the owner's hour. For a whole-hour zone
+    /// the two agree, but in a half-hour zone (Asia/Kolkata, Australia/Adelaide) UTC-anchored hourly
+    /// ticks would land at :30 local, which is not what anyone means by hourly.
+    ///
+    /// Deliberately returns a local <see cref="DateTime"/> and never converts back to UTC: the only
+    /// use is comparing two slots against each other, and converting a local time back across a
+    /// daylight-saving boundary can throw or silently pick the wrong side. Comparing in local terms
+    /// sidesteps that entirely - the cost is one short or long gap on each DST changeover day,
+    /// which is the correct behaviour anyway.
+    /// </summary>
+    private DateTime SlotOf(DateTimeOffset moment)
+    {
+        var local = _config.WakeTimeZone is { } tz
+            ? TimeZoneInfo.ConvertTime(moment, tz).DateTime
+            : moment.UtcDateTime;
+
+        var sinceMidnight = local - local.Date;
+        var ticks = Math.Max(1, _config.WakeInterval.Ticks);
+
+        return local.Date.AddTicks(sinceMidnight.Ticks / ticks * ticks);
     }
 
     /// <summary>Quiet hours, in the owner's local time rather than UTC - converted through tzdata
