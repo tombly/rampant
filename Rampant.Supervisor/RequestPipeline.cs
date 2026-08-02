@@ -93,6 +93,36 @@ public sealed class RequestPipeline(
 
         var changed = await Git.ChangedPathsAsync(Workspace.AgentRepo, preSha, postSha, CancellationToken.None);
 
+        // A failed run is rolled back even though it left changes behind, and never becomes an
+        // approval request. Claude Code can stop mid-edit - turn limit, budget cap, timeout - and
+        // CommitLeftoversAsync above will faithfully commit the half of the job it had done. The
+        // path policy then sees real core files and, before this check existed, asked the owner to
+        // approve unfinished work with no description attached, because a failed run has no result
+        // text to describe it with. Observed live on the first core-touching request.
+        //
+        // The build gate is not a substitute here. It catches code that does not compile; it has
+        // nothing to say about code that compiles and is half-written. When the tool that wrote a
+        // change reports that it did not finish, that is the more reliable signal of the two.
+        if (!result.Success)
+        {
+            await Git.ResetHardAsync(Workspace.AgentRepo, preSha, CancellationToken.None);
+            _logger.LogWarning(
+                "Request {Id} failed inside Claude Code but left changes ({Paths}); rolled back to {Sha}",
+                request.Id, string.Join(", ", changed), preSha[..7]);
+
+            await CompleteAsync(
+                request,
+                RequestStatus.Failed,
+                Summarize(result.Summary,
+                    "Claude Code stopped before finishing - most likely it ran out of turns. The partial "
+                    + "work it had done was rolled back and nothing was deployed."),
+                result.CostUsd,
+                changed,
+                CancellationToken.None);
+
+            return null;
+        }
+
         // Before the deploy/hold decision, not after: an unpinned version is wrong whichever
         // branch this would have taken, and holding one for approval would mean the owner
         // approving something that cannot be reproduced.
@@ -253,7 +283,20 @@ public sealed class RequestPipeline(
         await _approvals.ClearAsync(ct);
         return await BuildAndDeployAsync(
             pending.Request,
-            pending.ClaudeSummary,
+            // Not the bare summary. That text was written when Claude Code finished - before the
+            // owner had answered - so it describes a change that is "waiting for approval", and
+            // replaying it verbatim after approval contradicts the Deployed status sitting right
+            // above it. Observed live: the agent read the prose over the label and told the owner
+            // their approved, already-running change was still waiting on them.
+            $"""
+            The owner approved this and it is deployed and running. Nothing is outstanding.
+
+            What was built, in Claude Code's words at the time it finished. That was before the
+            approval came in, so ignore anything below about waiting on the owner - it has since
+            happened:
+
+            {pending.ClaudeSummary}
+            """,
             // The money was charged when Claude Code ran; approving does not spend again.
             costUsd: 0m,
             pending.ChangedPaths,

@@ -122,6 +122,18 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
                 ? parsed
                 : 0m;
 
+            // A run cut short carries no "result" text at all - the field is simply absent. Rather
+            // than pass an empty string up the stack, say what the JSON does tell us, so the
+            // outcome the agent reads (and the owner hears) explains itself instead of arriving
+            // blank. Observed live: a turn-limited run produced is_error with no result, and the
+            // approval message that reached the owner had nothing in the "what it did" section.
+            if (string.IsNullOrWhiteSpace(summary))
+            {
+                var stop = root.TryGetProperty("stop_reason", out var s) ? s.GetString() : null;
+                var turns = root.TryGetProperty("num_turns", out var t) && t.TryGetInt32(out var n) ? n : 0;
+                summary = $"Claude Code produced no summary (stopped after {turns} turns, reason: {stop ?? "unknown"}).";
+            }
+
             return new ClaudeCodeResult(exitCode == 0 && !isError, summary.Trim(), cost, stdout, stderr);
         }
         catch (JsonException)

@@ -36,9 +36,10 @@ var host = builder.Build();
 
 var startupLogger = host.Services.GetRequiredService<ILogger<Program>>();
 startupLogger.LogInformation(
-    "Rampant supervisor starting. Daily budget ${Budget:0.00}, per-build cap ${Cap:0.00}, cooldown {Cooldown}, wake every {Wake} between {Start:00}:00 and {End:00}:00 {Zone}.",
-    config.DailyBudgetUsd, config.MaxBudgetPerInvocationUsd, config.BuildCooldown, config.WakeInterval,
-    config.WakeStartHour, config.WakeEndHour, config.WakeTimeZone?.Id ?? "(no window - waking around the clock)");
+    "Rampant supervisor starting. Builds with {Model}. Daily budget ${Budget:0.00}, per-build cap ${Cap:0.00}, cooldown {Cooldown}, wake every {Wake} between {Start:00}:00 and {End:00}:00 {Zone}.",
+    config.ClaudeModel, config.DailyBudgetUsd, config.MaxBudgetPerInvocationUsd, config.BuildCooldown,
+    config.WakeInterval, config.WakeStartHour, config.WakeEndHour,
+    config.WakeTimeZone?.Id ?? "(no window - waking around the clock)");
 
 if (config.AnthropicApiKey is null)
     startupLogger.LogWarning("ANTHROPIC_API_KEY is not set - no capability request can be built.");

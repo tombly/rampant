@@ -39,12 +39,18 @@ public sealed class ApprovalQueue(ILogger<ApprovalQueue> _logger)
     // Bare yes/no is accepted because only one approval can ever be outstanding, so there is
     // nothing to disambiguate. The token is offered anyway, and honoured when given, for the case
     // where the owner replies hours later to a message they have to scroll back to find.
+    //
+    // A word only belongs here if, sent on its own while an approval is pending, it could not
+    // plausibly mean anything else - because a match is consumed by the supervisor and the agent
+    // never sees the message. "stop" was in the deny list and has been removed on exactly that
+    // ground: it reads far more like a conversational interrupt than a considered no, and the cost
+    // of getting it wrong is silently discarding both the owner's message and the change.
     private static readonly Regex ApprovePattern =
         new(@"^\s*(approve[d]?|yes|y|ok|okay|go|ship|do it)\b\W*([0-9a-f]{4})?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex DenyPattern =
-        new(@"^\s*(den(y|ied)|no|n|reject|cancel|stop|don'?t)\b\W*([0-9a-f]{4})?\s*$",
+        new(@"^\s*(den(y|ied)|no|n|reject|cancel|don'?t)\b\W*([0-9a-f]{4})?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Held by two threads: the Signal read loop (resolving a reply) and the supervisor loop
