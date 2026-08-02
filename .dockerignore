@@ -1,0 +1,14 @@
+# Build output from whatever machine ran `docker build` must never enter the image. The seed is
+# copied verbatim to /opt/seed and from there to /workspace/agent, so a laptop's obj/ would arrive
+# inside the container carrying project.assets.json full of macOS absolute paths and a NuGet root
+# that doesn't exist there - and it would be sitting in the agent's own repository, in front of
+# whatever reads it next.
+**/bin/
+**/obj/
+
+# Secrets. .env is injected by compose at run time, never baked into an image layer.
+.env
+local-workspace/
+
+.git/
+.DS_Store

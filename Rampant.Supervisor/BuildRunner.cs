@@ -18,16 +18,14 @@ public sealed class BuildRunner(ILogger<BuildRunner> _logger) : IBuildRunner
     {
         _logger.LogInformation("Building {ProjectDirectory} -> {OutputPath}", projectDirectory, outputPath);
 
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add("build");
-        psi.ArgumentList.Add(projectDirectory);
-        psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add(outputPath);
+        // As the builder uid, which owns the source, the output directory and the NuGet cache.
+        // Also on a scrubbed environment: `dotnet build` executes MSBuild targets that arrive
+        // inside NuGet packages, and there is no reason for those to see an API key.
+        var psi = RunAs.Command(RunAs.Builder, "dotnet", workingDirectory: null,
+            "build", projectDirectory, "-o", outputPath);
+        RunAs.ApplyBuildEnvironment(psi);
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start dotnet build process.");

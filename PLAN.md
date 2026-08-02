@@ -62,6 +62,53 @@ judging the agent's decisions.
   wanted (Ancela's own Aspire infra is not reused here) — this decision is about where to run it
   long-term, not a technical limitation on portability.
 
+## Core tenets
+
+Seven principles the rest of this document follows from. They were not designed up front — each
+was arrived at by making a specific decision and noticing afterwards what it committed to. When a
+new decision conflicts with one of these, that's a signal to re-open the tenet explicitly rather
+than quietly make an exception.
+
+1. **The agent may stop being an assistant.** Its purpose is not fixed at genesis. If it rewrites
+   itself into something that isn't a chat agent — a monitor, a calculator, a thing that speaks
+   once a week — that is the system conforming to what the owner actually needs, not a failure to
+   be corrected. Nothing in the design should try to pin its purpose in place. What we protect is
+   the owner's ability to *see* the drift and to wipe it; never the agent's shape.
+
+2. **Nothing is pre-provisioned.** Genesis is as close to nothing as it can be: a way to think and
+   a way to change itself. Every external capability is opened only after the agent asks for that
+   specific thing by name. This is why Cosmos was removed before it was ever used — and why hosted
+   tools (`web_search`, `web_fetch`) are the same violation in a less visible form: a large
+   capability, present at genesis, that was never requested.
+
+3. **It builds its own tools.** Related to (2) but distinct — the agent is not handed capabilities
+   it then wires up, it writes them. A tool it didn't build muddies the central question: when it
+   does something impressive, we want to know whether *this system* did it, or whether a vendor did
+   it and the agent declared one line. Self-built tools are worse at first. That is the price of
+   knowing whose capability it is.
+
+4. **Every constraint inside `/workspace/agent` is a default, not a bound.** The agent's defining
+   capability is rewriting its own source, so any limit expressed there — a spend ledger, the model
+   string, a tool allow-list, even its own logging — is a suggestion it can edit away, with or
+   without intending to. Real limits live only where it cannot reach: the root-owned supervisor
+   binary, `.env` on the host, the OS user, the API key's own authorization, and SSH. Put anything
+   that must actually hold in one of those; treat everything else as ergonomics.
+
+5. **Access control is the one thing not left to emergence.** Sender authentication for the sole
+   channel into a `bypassPermissions` self-modifying system is baseline access control, not a
+   capability to be discovered. It is human-authored on purpose and explicitly *not* covered by
+   tenet (2) — a deliberate carve-out, made after watching two independent geneses each reinvent
+   it differently and each get it incompletely right.
+
+6. **The living agent is disposable; the seed is canonical.** `Rampant.Seed/` is the real artifact.
+   The instance on the Pi is an experiment in progress and can be wiped at any time. Self-extensions
+   are *evidence about how the system behaves*, not work product to preserve — port one back only
+   if it earns its place on merit, never merely to avoid losing it.
+
+7. **Spend is the binding constraint.** Not capability, not correctness, not the agent's shape. A
+   badly-built agent is a result; an unbounded bill is a real loss. Bound the money at a layer the
+   agent cannot rewrite, and let it be wrong about everything else.
+
 ## Architecture
 
 **Two independent git repositories — not a monorepo.** This is deliberate: the supervisor must

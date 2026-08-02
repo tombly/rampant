@@ -9,9 +9,40 @@ services:
       # volume - either satisfies "persists across container rebuilds."
       - ./local-workspace:/workspace
     depends_on:
-      - signal-cli
+      # condition: service_healthy, not the bare list form. Without it compose waits only for the
+      # sidecar *container* to start, not for its JVM to bind 7583 - so the supervisor's first
+      # outbound alert reliably hit ECONNREFUSED and was swallowed, making anything that went
+      # wrong in the first seconds after `up` unreportable. See PLAN-V2.md -> "V1 lessons".
+      signal-cli:
+        condition: service_healthy
     restart: unless-stopped
     # Exactly one instance ever touches /workspace - no scaling, no replicas.
+
+    # Resource ceiling. This is not about the agent misbehaving - it's about an ordinary bug in an
+    # auto-deployed self-built tool (infinite loop, leak, runaway fork) taking down Pi-hole, which
+    # shares this box and serves household DNS. See PLAN-V2.md -> "What a tool is allowed to do".
+    # The Pi here has 4 cores / 8GB, so this leaves a core and ~5GB for the host and Pi-hole even
+    # with the container at its ceiling. Raise only if `dotnet build` starts getting OOM-killed.
+    cpus: 3.0
+    mem_limit: 3g
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    # Drop everything, then add back exactly what the supervisor needs as pid 1: CHOWN/FOWNER to
+    # lay out /workspace ownership at boot, SETUID/SETGID to drop privilege when spawning the
+    # agent as agentrunner, DAC_OVERRIDE to consume files the agent wrote into directories the
+    # agent owns, KILL to signal a process running under a different uid. Note this constrains
+    # the container against the *host*; the agent/supervisor boundary is uid separation, which
+    # none of these affect.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - KILL
 
   signal-cli:
     build:
@@ -25,6 +56,16 @@ services:
     restart: unless-stopped
     # Not published to the host - reachable by the rampant container only, over the internal
     # Docker network compose creates automatically (service name "signal-cli").
+
+    # Healthy means the JSON-RPC port actually accepts a connection, not merely that the JVM
+    # started. bash's /dev/tcp rather than nc/curl - it's the one TCP probe guaranteed present in
+    # the temurin base image. start_period covers JVM boot without counting those as failures.
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/7583' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
 
 volumes:
   signal-cli-data:

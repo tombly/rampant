@@ -3,32 +3,36 @@ using System.Text.Json;
 namespace Rampant.Supervisor;
 
 /// <summary>
-/// Persisted outside /workspace/agent so it's never in the agent's own normal reach.
-/// LastBuiltSha tracks the last commit we *attempted* a build for, successful or not - this
-/// avoids hot-looping a rebuild of the same broken commit every poll cycle. A build failure
-/// leaves the previously-running (last-known-good) binary untouched; the agent learns about the
-/// failure from its own next cycle reading the build-failure log, not from this state file.
+/// Persisted under /workspace/state, which is root-owned - the agent can read it and cannot change
+/// it. <see cref="LastBuiltSha"/> is the commit the current build came from, which is what makes
+/// an ordinary restart recognisable as exactly that rather than as a crash. V1 had no such
+/// distinction: the crash-recovery branch was the only path that started the agent on a boot with
+/// nothing new to build, so every restart logged "crashed unexpectedly" and tried to text the
+/// owner about it.
 /// </summary>
-public sealed record SupervisorState(string? LastBuiltSha, int ConsecutiveFailureCount)
+public sealed record SupervisorState(
+    string? LastBuiltSha,
+    int ConsecutiveFailureCount,
+    DateTimeOffset? LastWakeTickUtc)
 {
-    private const string StatePath = "/workspace/supervisor-state.json";
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public static SupervisorState Empty { get; } = new(null, 0);
+    public static SupervisorState Empty { get; } = new(null, 0, null);
 
     public static async Task<SupervisorState> LoadAsync(CancellationToken ct)
     {
-        if (!File.Exists(StatePath))
+        if (!File.Exists(Workspace.StateFile))
             return Empty;
 
-        await using var stream = File.OpenRead(StatePath);
-        return await JsonSerializer.DeserializeAsync<SupervisorState>(stream, cancellationToken: ct)
-            ?? Empty;
+        var json = await File.ReadAllTextAsync(Workspace.StateFile, ct);
+        return JsonSerializer.Deserialize<SupervisorState>(json) ?? Empty;
     }
 
     public async Task SaveAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
-        await using var stream = File.Create(StatePath);
-        await JsonSerializer.SerializeAsync(stream, this, cancellationToken: ct);
+        Directory.CreateDirectory(Workspace.State);
+        var tmp = Workspace.StateFile + ".tmp";
+        await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(this, JsonOptions), ct);
+        File.Move(tmp, Workspace.StateFile, overwrite: true);
     }
 }

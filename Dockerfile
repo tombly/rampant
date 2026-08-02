@@ -8,20 +8,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m agentrunner
+# Three users, and that split is what makes every boundary in PLAN-V2.md real rather than
+# conventional:
+#
+#   root       the supervisor (pid 1). Holds ANTHROPIC_API_KEY, the Signal socket and the spend
+#              ledger. Owns nothing inside /workspace.
+#   builder    Claude Code, git and dotnet build. Owns /workspace/{agent,build,.nuget}.
+#   agentrunner the agent. Owns /workspace/{inbox,outbox,logs,data,requests/in} and nothing else.
+#
+# uid/gid are pinned rather than left to useradd's next-free counter: the bind-mounted workspace on
+# the host carries these numbers, and a shifted uid silently breaks every permission below. 1655
+# matches what the V1 image happened to allocate, so an existing local-workspace keeps working.
+RUN groupadd -g 1655 agentrunner && useradd -m -u 1655 -g 1655 agentrunner \
+ && groupadd -g 1656 builder     && useradd -m -u 1656 -g 1656 builder \
+ && chmod 0700 /home/builder
 
-# Claude Code CLI, installed as agentrunner so the binary lands somewhere that user can run it
-# (the standalone installer installs into the invoking user's home directory).
-USER agentrunner
+# Claude Code CLI, installed as builder into /home/builder/.local/bin. It runs under that uid and
+# nothing else can reach it: the home is 0700 and belongs to a different user than the agent.
+#
+# It must not run as root. Claude Code refuses --dangerously-skip-permissions outright when it
+# detects root privileges - and beyond that refusal, a root Claude Code could rewrite
+# /opt/supervisor below, which would quietly void the first of PLAN-V2's four boundaries. Under its
+# own uid it can write the agent's source and nothing else.
+USER builder
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/agentrunner/.local/bin:${PATH}"
 USER root
 
 # Supervisor: built once at image-build time, baked into /opt, root-owned and read-only to
 # agentrunner - even if Claude Code were ever misdirected outside its own working directory, it
 # cannot modify the supervisor.
 WORKDIR /src
-COPY Directory.Packages.props ./
 COPY Rampant.Supervisor/ ./Rampant.Supervisor/
 RUN dotnet publish Rampant.Supervisor/Rampant.Supervisor.csproj -c Release -o /opt/supervisor
 
@@ -30,12 +46,17 @@ RUN dotnet publish Rampant.Supervisor/Rampant.Supervisor.csproj -c Release -o /o
 COPY Rampant.Seed/ /opt/seed/
 
 # NuGet cache lives on the persistent volume so a container rebuild doesn't force re-downloading
-# every package the agent has pulled in.
+# every package. Owned by root: the supervisor is the only thing that builds.
 ENV NUGET_PACKAGES=/workspace/.nuget/packages
 
-RUN mkdir -p /workspace && chown -R agentrunner:agentrunner /workspace
+RUN mkdir -p /workspace
 VOLUME /workspace
 
-USER agentrunner
+# Runs as root and stays root: the entrypoint lays out /workspace ownership (which needs CHOWN
+# against a bind mount compose creates as root:root), then execs the supervisor, which drops to
+# agentrunner only for the agent process it spawns. See docker-entrypoint.sh.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
+
 WORKDIR /workspace
-ENTRYPOINT ["dotnet", "/opt/supervisor/Rampant.Supervisor.dll"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
