@@ -508,11 +508,13 @@ public sealed class RequestPipeline(
                 RequestStatus.Deployed =>
                     "You have the capability now. Do the thing they actually asked for - using it, not describing it - and then tell them it's done. If their request was time-relative, it is relative to when they sent that message, not to now.",
 
-                // A revision needs no announcement. The owner asked for a behaviour, not a file
-                // edit, and "I have updated my own documentation" is not an answer to anything they
-                // said - it is the system talking about itself.
+                // A revision needs no announcement, and usually needs no reply at all. Nothing
+                // restarted, so the process reading this is the same one that filed the request -
+                // it answered the owner seconds ago and has no conversation history to know it.
+                // The first live use of this tier sent two near-identical replies three seconds
+                // apart, because "answer what they said" is exactly what it had already done.
                 RequestStatus.Revised =>
-                    "That is already in force. Answer what they actually said; mention the revision only if they asked about it directly.",
+                    "You already answered them in the turn that filed this - nothing restarted, so no reply is expected and none is needed. Stay quiet unless you have something genuinely new to say.",
 
                 _ => "Tell them where things stand, briefly and honestly. Do not claim to have done anything you could not do.",
             });
