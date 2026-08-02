@@ -75,7 +75,19 @@ public static class LogCommand
                 continue;
 
             var text = m.Groups["text"].Value;
-            var category = text.StartsWith("tick,", StringComparison.Ordinal) ? "heartbeat" : "heartbeat-issue";
+
+            // Three buckets, not two. An ordinary start/stop is neither an idle tick nor a problem,
+            // and filing it under "heartbeat-issue" trains the reader to skim past a label whose
+            // only job is to be worth stopping on - the deploy restarts the agent constantly, so
+            // those would have been most of the "issues" on screen.
+            var category = text switch
+            {
+                _ when text.StartsWith("tick,", StringComparison.Ordinal) => "heartbeat",
+                _ when text.StartsWith("agent started", StringComparison.Ordinal)
+                    || text.StartsWith("agent stopping", StringComparison.Ordinal) => "lifecycle",
+                _ => "heartbeat-issue",
+            };
+
             yield return new LogEvent(ts, category, text);
         }
     }
