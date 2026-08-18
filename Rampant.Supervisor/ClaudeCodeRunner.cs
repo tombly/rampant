@@ -4,7 +4,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Rampant.Supervisor;
 
-public sealed record ClaudeCodeResult(bool Success, string Summary, decimal CostUsd, string RawOutput, string ErrorOutput);
+/// <summary>The outcome of one Claude Code invocation. <paramref name="TerminalReason"/> is set
+/// only on failure, and says in plain English *why* the run stopped - a distinction the agent
+/// cannot make for itself, because the raw output it would need is in a log it deliberately
+/// cannot reach.</summary>
+public sealed record ClaudeCodeResult(
+    bool Success,
+    string Summary,
+    decimal CostUsd,
+    string RawOutput,
+    string ErrorOutput,
+    string? TerminalReason = null);
 
 public interface IClaudeCodeRunner
 {
@@ -91,7 +101,8 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
                 // cap rather than nothing, so a repeatedly timing-out request cannot run free.
                 _config.MaxBudgetPerInvocationUsd,
                 string.Empty,
-                "timed out");
+                "timed out",
+                $"It hit the {_config.ClaudeCodeTimeout.TotalMinutes:0}-minute wall-clock limit on a single build.");
 
             await LogInvocationAsync(request, prompt, timedOut);
             return timedOut;
@@ -122,6 +133,9 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
                 ? parsed
                 : 0m;
 
+            var success = exitCode == 0 && !isError;
+            var terminalReason = success ? null : DescribeTermination(root);
+
             // A run cut short carries no "result" text at all - the field is simply absent. Rather
             // than pass an empty string up the stack, say what the JSON does tell us, so the
             // outcome the agent reads (and the owner hears) explains itself instead of arriving
@@ -129,12 +143,11 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
             // approval message that reached the owner had nothing in the "what it did" section.
             if (string.IsNullOrWhiteSpace(summary))
             {
-                var stop = root.TryGetProperty("stop_reason", out var s) ? s.GetString() : null;
                 var turns = root.TryGetProperty("num_turns", out var t) && t.TryGetInt32(out var n) ? n : 0;
-                summary = $"Claude Code produced no summary (stopped after {turns} turns, reason: {stop ?? "unknown"}).";
+                summary = $"Claude Code produced no summary (it stopped after {turns} turns).";
             }
 
-            return new ClaudeCodeResult(exitCode == 0 && !isError, summary.Trim(), cost, stdout, stderr);
+            return new ClaudeCodeResult(success, summary.Trim(), cost, stdout, stderr, terminalReason);
         }
         catch (JsonException)
         {
@@ -158,6 +171,51 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
                 stdout,
                 stderr);
         }
+    }
+
+    /// <summary>
+    /// Why the run stopped, in a sentence the agent can act on.
+    ///
+    /// Claude Code says this in `terminal_reason`, `subtype` and an `errors` array - never in
+    /// `stop_reason`, which reports the last API-level stop and read "tool_use" on both of the
+    /// runs that made this method necessary. True, and useless: the agent was told only that the
+    /// build "stopped partway through", correctly said it could not tell why, and then spent
+    /// $1.34 retrying a request that had failed for a reason no retry could change.
+    ///
+    /// Only `budget_exhausted` is mapped from a confirmed live run. Everything else is passed
+    /// through verbatim rather than guessed at - a wrong diagnosis is worse than a raw one,
+    /// because the agent will act on it.
+    /// </summary>
+    private string DescribeTermination(JsonElement root)
+    {
+        var terminal = root.TryGetProperty("terminal_reason", out var tr) ? tr.GetString() : null;
+
+        var errors = root.TryGetProperty("errors", out var e) && e.ValueKind == JsonValueKind.Array
+            ? string.Join("; ", e.EnumerateArray()
+                .Select(x => x.GetString())
+                .Where(x => !string.IsNullOrWhiteSpace(x)))
+            : string.Empty;
+
+        if (terminal == "budget_exhausted")
+        {
+            // The actionable half. Retrying an over-budget request unchanged buys the same
+            // failure at the same price; splitting it is the only move that changes the outcome.
+            return $"It ran out of money: a single build may cost at most "
+                + $"${_config.MaxBudgetPerInvocationUsd:0.00}, and this one reached that cap before "
+                + "finishing. The request was too large to build in one go. Asking for a smaller "
+                + "piece of it will do better than retrying the same thing unchanged.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(terminal))
+        {
+            return string.IsNullOrWhiteSpace(errors)
+                ? $"Claude Code stopped early, reporting: {terminal}."
+                : $"Claude Code stopped early, reporting: {terminal} ({Truncate(errors, 200)}).";
+        }
+
+        return string.IsNullOrWhiteSpace(errors)
+            ? "Claude Code stopped early without saying why."
+            : $"Claude Code stopped early, reporting: {Truncate(errors, 200)}.";
     }
 
     /// <summary>Every invocation - the full prompt sent, and Claude Code's complete raw output - is

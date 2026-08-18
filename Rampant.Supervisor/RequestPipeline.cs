@@ -93,7 +93,9 @@ public sealed class RequestPipeline(
         {
             var detail = result.Success
                 ? "Claude Code reported success but changed nothing, so there is no new capability."
-                : Summarize(result.Summary, "Claude Code could not complete the request.");
+                : WithReason(
+                    Summarize(result.Summary, "Claude Code could not complete the request."),
+                    result.TerminalReason);
 
             await CompleteAsync(request, RequestStatus.Failed, detail, result.CostUsd, [], CancellationToken.None);
             return null;
@@ -121,9 +123,10 @@ public sealed class RequestPipeline(
             await CompleteAsync(
                 request,
                 RequestStatus.Failed,
-                Summarize(result.Summary,
-                    "Claude Code stopped before finishing - most likely it ran out of turns. The partial "
-                    + "work it had done was rolled back and nothing was deployed."),
+                WithReason(
+                    Summarize(result.Summary, "Claude Code stopped before finishing.")
+                        + " The partial work it had done was rolled back and nothing was deployed.",
+                    result.TerminalReason),
                 result.CostUsd,
                 changed,
                 CancellationToken.None);
@@ -539,6 +542,14 @@ public sealed class RequestPipeline(
 
     private static string Summarize(string? summary, string fallback)
         => string.IsNullOrWhiteSpace(summary) ? fallback : summary.Trim();
+
+    /// <summary>Appends why the run stopped to what it managed to say about itself. Kept separate
+    /// from the summary because the two have different authors: the summary is the model's own
+    /// account, the reason is the harness's. The agent reads this detail verbatim in its inbox,
+    /// and it is the only channel by which it can learn that a failure was structural rather than
+    /// something a retry might fix - the raw output that says so is in a log it cannot read.</summary>
+    private static string WithReason(string detail, string? terminalReason)
+        => string.IsNullOrWhiteSpace(terminalReason) ? detail : $"{detail.TrimEnd()} {terminalReason.Trim()}";
 
     private static string Truncate(string text, int max)
         => text.Length <= max ? text : text[..max] + "…";

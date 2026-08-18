@@ -306,6 +306,31 @@ stopped being cheaper the moment it required a retry.
 **For scale:** one build costs roughly what a year of hourly reflection cycles costs. The reflection
 loop is not the expensive part of an autonomous agent. Building is.
 
+### The failure is invisible to the thing that has to learn from it (2026-08-16)
+
+A third and fourth failure, on the same request, sharpen this. Asked for a read-only local-network
+device inventory — the largest single capability yet requested — the build hit the cap twice, at
+**$1.00 and $1.34**, 12 and 19 turns into a 45-turn allowance. Neither was close to the turn limit.
+**$2.34 bought nothing**, and the second attempt was the agent's own unprompted retry.
+
+**The retry was not a judgement error; the agent had no way to make the judgement.** The harness
+reports why it stopped in `terminal_reason` (`budget_exhausted`), `subtype` and an `errors` array —
+and none of those reached the outcome the agent reads. What reached it was `stop_reason`, which said
+`tool_use`: the last API-level stop, true and useless. Asked directly whether it could tell why, it
+answered accurately that it could not, and the pipeline's own fallback text guessed **"most likely it
+ran out of turns"** — the one diagnosis the data ruled out. The correct inference (*this request is
+too large to build for the money available; split it*) was unavailable to the only party in a
+position to act on it, and the owner had to supply it from outside.
+
+**This is finding 4 in a new place.** The system's weak point is again not doing the work but
+reporting on it — except here the missing report is one the agent needed about *itself*, and its
+absence cost a second failed build at 1.3× the price of the first.
+
+**Changed 2026-08-17:** the per-build cap was raised to **$2.50** and the terminal reason is now
+carried into the failure detail the agent receives, in plain English, along with the advice to split
+rather than retry. Both are untested against a live failure — whether the agent acts on a reason it
+is finally given is the open question, and the network inventory is the obvious test case.
+
 ---
 
 ## 7. Open, unresolved, or newly broken

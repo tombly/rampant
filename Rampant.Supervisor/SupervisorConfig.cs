@@ -42,7 +42,7 @@ public sealed record SupervisorConfig(
         AnthropicApiKey: Get("ANTHROPIC_API_KEY"),
         ClaudeModel: Get("RAMPANT_CLAUDE_MODEL") ?? "claude-sonnet-5",
         MaxTurns: GetInt("RAMPANT_MAX_TURNS", 40),
-        MaxBudgetPerInvocationUsd: GetDecimal("RAMPANT_MAX_BUDGET_USD", 1.00m),
+        MaxBudgetPerInvocationUsd: GetDecimal("RAMPANT_MAX_BUDGET_USD", 2.50m),
         DailyBudgetUsd: GetDecimal("RAMPANT_DAILY_BUDGET_USD", 5.00m),
         BuildCooldown: TimeSpan.FromMinutes(GetInt("RAMPANT_BUILD_COOLDOWN_MINUTES", 45)),
         WakeInterval: TimeSpan.FromMinutes(GetInt("RAMPANT_WAKE_INTERVAL_MINUTES", 60)),
