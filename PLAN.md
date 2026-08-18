@@ -581,7 +581,7 @@ reviewing every tool, which defeats the point. The bound is on resources, not in
 
 ## Reference implementations
 
-### Ancela (`~/Repos/Ancela`) — still worth reading, but no longer the structural model
+### Ancela — still worth reading, but no longer the structural model
 
 A mature agent by the same author, 13 plugins, running `gpt-5.6-luna`. It was named here as the
 shape to copy back when this was going to be built on Semantic Kernel. That decision changed during
