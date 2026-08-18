@@ -12,16 +12,16 @@ public sealed record SignalInbound(string Sender, string Text, bool IsGroupMessa
 /// runs with --receive-mode=on-start, so inbound messages arrive as unsolicited notifications over
 /// a persistent TCP connection - genuinely event-driven, not polled.
 ///
-/// Sends go out over that *same* connection rather than a short-lived one per message. V1 opened a
-/// fresh socket per send, which was simpler but left an unanswered question: whether the daemon
+/// Sends go out over that *same* connection rather than a short-lived one per message. Opening a
+/// fresh socket per send is simpler but leaves an unanswered question: whether the daemon
 /// fans receive-notifications out to every connected client or hands each to one. If it is the
 /// latter, a send racing an inbound message could swallow it - an unacceptable failure mode for
 /// the only channel in. One connection removes the question entirely.
 ///
-/// It also reads the response. V1's notifier wrote the request and disposed the stream, so a
-/// connection that succeeded but was rejected (unregistered number, bad recipient, rate limit) was
-/// indistinguishable from success, and the alert channel was never positively confirmed to
-/// deliver. Here a failed send throws.
+/// It also reads the response. Writing the request and disposing the stream - as an earlier
+/// notifier did - leaves a connection that succeeded but was rejected (unregistered number, bad
+/// recipient, rate limit) indistinguishable from success, so the alert channel is never positively
+/// confirmed to deliver anything. Here a failed send throws.
 /// </summary>
 public sealed class SignalClient(string host, int port, ILogger<SignalClient> logger)
 {

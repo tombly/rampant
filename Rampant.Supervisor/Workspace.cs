@@ -2,7 +2,7 @@ namespace Rampant.Supervisor;
 
 /// <summary>
 /// Every path in the system, in one place, because the ownership of these directories *is* the
-/// security model (PLAN-V2.md -> "Filesystem layout"). Splitting them across the files that happen
+/// security model (PLAN.md -> "Filesystem layout"). Splitting them across the files that happen
 /// to use them makes it impossible to check the layout against the plan at a glance.
 ///
 /// The rule: agent-writable directories are the ones under <see cref="Inbox"/>,

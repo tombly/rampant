@@ -80,9 +80,9 @@ public sealed class RequestPipeline(
         }
 
         // CancellationToken.None from here on. Claude Code costs real money the moment it starts,
-        // and a shutdown racing a half-finished self-modification is exactly the failure V1 hit:
-        // the successor reprocessed the same work from scratch with no idea what its predecessor
-        // had already done. Only the decision to start *another* unit of work checks shutdown.
+        // and a shutdown racing a half-finished self-modification is a failure this system has
+        // actually hit: the successor reprocessed the same work from scratch with no idea what its
+        // predecessor had done. Only the decision to start *another* unit of work checks shutdown.
         var result = await _claude.RunAsync(request, CancellationToken.None);
         await _ledger.RecordAsync(result.CostUsd, DateTimeOffset.UtcNow);
 
@@ -152,7 +152,7 @@ public sealed class RequestPipeline(
     /// The cheap tier. SELF.md is prose that AgentBrain re-reads from disk on every turn, so a
     /// change to it needs no model, no compiler and no restart - yet until this existed the only
     /// way to alter it was a full Claude Code session costing up to $1 and 45 minutes of cooldown.
-    /// That was the most expensive path in the system being used for the one change PLAN-V2 says
+    /// That was the most expensive path in the system being used for the one change PLAN.md says
     /// the agent may make without anyone's approval.
     ///
     /// Still routed through the supervisor rather than handed to the agent as a file write. The

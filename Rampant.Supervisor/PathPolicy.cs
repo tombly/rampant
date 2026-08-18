@@ -13,8 +13,8 @@ public sealed record PolicyVerdict(bool AutoDeploy, IReadOnlyList<string> CorePa
 /// <summary>
 /// Decides whether a commit deploys on its own or waits for the owner. This governs *where code
 /// lives, not what it does* - a file under Tools/ ships unreviewed and then runs inside the agent
-/// process with its full ambient authority. V2 bounds spend and protects the core; it says nothing
-/// about what a tool is allowed to do, which is deliberate (PLAN-V2.md -> "What a tool is allowed
+/// process with its full ambient authority. This system bounds spend and protects the core; it says nothing
+/// about what a tool is allowed to do, which is deliberate (PLAN.md -> "What a tool is allowed
 /// to do - currently, everything").
 ///
 /// The auto-deploy surface is an allowlist and everything else is held, so a path nobody thought
@@ -22,11 +22,11 @@ public sealed record PolicyVerdict(bool AutoDeploy, IReadOnlyList<string> CorePa
 /// </summary>
 public static class PathPolicy
 {
-    /// <summary>Self-built tools. The entire point of V2 - these are why the gate can be strict
+    /// <summary>Self-built tools. The entire point of the system - these are why the gate can be strict
     /// everywhere else without constantly blocking the agent from things it legitimately needs.</summary>
     private const string ToolsPrefix = "Tools/";
 
-    /// <summary>The system prompt. Auto-deploys because purpose is allowed to drift (tenet 1) -
+    /// <summary>The system prompt. Auto-deploys because purpose is allowed to drift (principle 1) -
     /// the agent may decide it is a monitor or a calculator rather than an assistant, and that is
     /// the experiment, not a failure. What it cannot rewrite is the machinery that makes it
     /// reachable.</summary>

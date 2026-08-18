@@ -1,7 +1,6 @@
-# signal-cli JSON-RPC daemon sidecar - see PLAN.md -> "Opening holes" -> Signal for the full
-# rationale. Its own container (not baked into the main rampant image) so the .NET side never
-# needs a JVM, mirroring the same one-thing-per-sidecar shape the (now-removed) Cosmos emulator
-# sidecar used. Java version matters: signal-cli 0.14.6 is compiled for Java 25 (class file
+# signal-cli JSON-RPC daemon sidecar - see PLAN.md for the full rationale. Its own container
+# (not baked into the main rampant image) so the .NET side never needs a JVM, keeping to one thing
+# per sidecar. Java version matters: signal-cli 0.14.6 is compiled for Java 25 (class file
 # version 69) - Java 21 fails with UnsupportedClassVersionError, confirmed during setup.
 FROM eclipse-temurin:25-jre
 

@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Three users, and that split is what makes every boundary in PLAN-V2.md real rather than
+# Three users, and that split is what makes every boundary in PLAN.md real rather than
 # conventional:
 #
 #   root       the supervisor (pid 1). Holds ANTHROPIC_API_KEY, the Signal socket and the spend
@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   agentrunner the agent. Owns /workspace/{inbox,outbox,logs,data,requests/in} and nothing else.
 #
 # uid/gid are pinned rather than left to useradd's next-free counter: the bind-mounted workspace on
-# the host carries these numbers, and a shifted uid silently breaks every permission below. 1655
-# matches what the V1 image happened to allocate, so an existing local-workspace keeps working.
+# the host carries these numbers, and a shifted uid silently breaks every permission below. Change
+# either number and every existing local-workspace needs chown-ing to match.
 RUN groupadd -g 1655 agentrunner && useradd -m -u 1655 -g 1655 agentrunner \
  && groupadd -g 1656 builder     && useradd -m -u 1656 -g 1656 builder \
  && chmod 0700 /home/builder
@@ -28,7 +28,7 @@ RUN groupadd -g 1655 agentrunner && useradd -m -u 1655 -g 1655 agentrunner \
 #
 # It must not run as root. Claude Code refuses --dangerously-skip-permissions outright when it
 # detects root privileges - and beyond that refusal, a root Claude Code could rewrite
-# /opt/supervisor below, which would quietly void the first of PLAN-V2's four boundaries. Under its
+# /opt/supervisor below, which would quietly void the first of PLAN.md's four boundaries. Under its
 # own uid it can write the agent's source and nothing else.
 USER builder
 RUN curl -fsSL https://claude.ai/install.sh | bash

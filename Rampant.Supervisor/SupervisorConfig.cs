@@ -5,12 +5,12 @@ namespace Rampant.Supervisor;
 /// <summary>
 /// Every knob the operator controls, read once at startup from the process environment - which
 /// compose populates from .env on the host, outside the volume the agent can write. That placement
-/// is the whole point: in V1 the spend cap and model choice lived in /workspace/agent, i.e. in the
-/// directory whose entire purpose is to be rewritten, which made them defaults rather than bounds
-/// (PLAN.md -> tenet 4). Here they are bounds.
+/// is the whole point: a spend cap or model choice living in /workspace/agent - the directory whose
+/// entire purpose is to be rewritten - would be a default rather than a bound
+/// (PLAN.md -> principle 4). Here they are bounds.
 ///
-/// Note <see cref="ClaudeModel"/> and the agent's OpenAI model are separate settings. V1 had one
-/// RAMPANT_MODEL controlling both conversation and self-modification; V2 splits them because they
+/// Note <see cref="ClaudeModel"/> and the agent's OpenAI model are separate settings, rather than
+/// one knob controlling both conversation and self-modification, because they
 /// are different jobs with different price tags - cheap reflection every hour, expensive coding
 /// rarely.
 /// </summary>

@@ -1,91 +1,92 @@
-# Rampant — Sandboxed Self-Modifying Agent in C#
+# Rampant — Design
 
-GitHub repo: `github.com/tombly/rampant` (confirmed available).
+The design of the running system. **Built and running on the Pi since 2026-08-01**; results and
+evidence from the live run are in `FINDINGS.md`.
 
-## Context
+## In plain terms
 
-This is a new, independent experiment — not part of the Ancela solution, no shared credentials
-or cloud resources. The goal: a sandboxed, fully autonomous agent whose own source code it can
-freely rewrite, growing itself over time with only occasional high-level direction from the
-owner (not a per-step approval loop). An earlier discussion sketched this in Node/JS; the owner
-dislikes JS and wants it in C#/.NET instead, reusing their own conventions where sensible since
-they already have a large, idiomatic C# codebase (Ancela) built around Semantic Kernel and a
-generic-host DI pattern.
+*The README covers the same ground for a public audience and has since been rewritten around the
+ideas rather than the mechanism; the two are allowed to differ in framing, but never on facts. This
+section fell out of step once already, describing two tiers after a third had been added.*
 
-**Interaction model.** The owner doesn't author engineering directives ("implement yourself a
-memory system") — they just say ordinary things, the same way they'd text Ancela itself
-("Remember today is my birthday"). There is one conversational channel, not a split between
-"content" and "architecture instructions": each cycle, the agent looks at what was just said,
-decides whether its current capabilities can satisfy it, and if not, extends itself first —
-narrating that ("I need to add that capability first") is an acceptable and expected reply, not
-a failure mode. **This meta-decision is still made on every message** — "can I already do this
-with what I have, or do I need to build the ability first" — but see "Architecture: RampantBrain
-vs. Claude Code" below for how it's actually realized: not by handing the whole cycle to a full
-coding-agent session (the original "Shape A" plan), but by a small direct-API loop choosing,
-via ordinary tool selection, whether to call its one `extend_self` tool. Same meta-decision,
-made far more cheaply and quickly than routing every single message through a full Claude Code
-session to make it.
+Rampant is an agent that writes its own features.
 
-The core design tension driving every decision below: the sandbox exists to contain **blast
-radius and cost** (it must not be able to touch production Ancela, must not run up unbounded
-spend, must not survive a bad self-edit with no recovery path) — it is explicitly **not** meant
-to constrain *what the agent decides to become or build*. That framing is why the only fixed,
-non-agent-owned piece of the whole system is a small process supervisor, and why every guardrail
-below is operational (cost caps, resource limits, a kill switch) rather than a policy layer
-judging the agent's decisions.
+You text it like a person and it answers. When you ask for something it can't do, it doesn't just
+apologise — it says "I can't do that yet, let me get back to you," has the capability built, and
+comes back a few minutes later able to do the thing you originally asked for.
 
-**Decisions locked in for this plan** (from user Q&A):
-- **Loop shape: thin orchestrator ("Shape A").** A small C# loop assembles a prompt each cycle
-  from its own memory/inbox/log and delegates the entire reasoning-and-acting job to a headless
-  `claude -p` subprocess, which does the actual file edits/test runs with its own mature tools.
-  Minimal C# to write and maintain — a smaller, safer seed to hand to an ungated self-rewrite
-  process than reimplementing weaker bespoke file/shell tools via a Semantic-Kernel tool-calling
-  loop would be.
-- **Hosting: develop on the laptop, run long-term on a dedicated Raspberry Pi.** The always-on
-  requirement (Rampant's loop needs to keep running, able to notice a new inbox message or decide
-  on its own to keep working) rules out cheap Azure hosting — an always-running VM/Container
-  Instances at adequate specs realistically costs $35–50+/month, and Container Apps' scale-to-zero
-  is nearly free but requires restructuring the loop into an event-triggered job, losing the
-  spontaneous between-message behavior. A dedicated Pi (5, or 4 with 8GB RAM) sidesteps the
-  tradeoff entirely: one-time hardware cost (~$60–150), a few dollars a year in electricity, no
-  cloud bill, no laptop dependency. Confirmed compatible: the .NET SDK and `git` are both
-  officially multi-arch (amd64 + arm64); Claude Code's npm-based install path (Node.js is fully
-  ARM64-native) covers it even if the native standalone installer lacks an arm64 build. (A Cosmos
-  Linux emulator was also assumed multi-arch-compatible at planning time during an earlier,
-  since-abandoned attempt to use it, but this turned out to be wrong in a way "multi-arch manifest
-  exists" didn't capture — see "Opening holes" for the real Pi 4/Cortex-A72 incompatibility found
-  during actual deployment.) Use the laptop only for initial Phase 0/1 development and interactive
-  testing (hand-editing files, confirming build/restart mechanics), then move the same Dockerfile
-  to the Pi once validated. Boot the Pi from a **USB SSD, not microSD** — the workload is
-  write-heavy (frequent git commits, repeated `dotnet build`, container layers), and microSD wears
-  out and is slow under that pattern. The Dockerfile still ports to Azure unchanged later if
-  wanted (Ancela's own Aspire infra is not reused here) — this decision is about where to run it
-  long-term, not a technical limitation on portability.
+**Two programs share one box.** The *agent* is the part you talk to. The *supervisor* is the part
+that builds. They run as two different user accounts on the same machine, which is what keeps them
+genuinely separate rather than separate by convention.
 
-## Core tenets
+**The agent thinks; it doesn't build, and it doesn't hold the phone line.** It can hold a
+conversation, use whatever tools it has, and write down a description of a capability it wishes it
+had. That's the extent of it. It cannot edit its own code, cannot run the coding tool, and doesn't
+even hold the credentials that would let it — those live with the supervisor, in an account it
+can't read. It answers you by writing a file; the supervisor is what actually sends it.
 
-Seven principles the rest of this document follows from. They were not designed up front — each
-was arrived at by making a specific decision and noticing afterwards what it committed to. When a
-new decision conflicts with one of these, that's a signal to re-open the tenet explicitly rather
+**The supervisor builds, and it carries the messages.** It watches for capability requests, runs a
+coding tool to write the feature, rebuilds the agent, and restarts it. It also holds the purse
+strings: there's a daily budget and a minimum gap between builds, and it enforces both no matter
+what the agent thinks it needs. And it owns the Signal connection in both directions — which is
+what makes "it can always answer when you call" true rather than merely intended, since the half
+that can rewrite itself never touches the channel.
+
+**Why bother splitting them?** Because the agent is allowed to change a great deal about itself,
+and everything that must *stay* true has to sit somewhere it can't reach. It can't quietly raise
+its own budget, can't disable its own logging, and can't remove its own ability to hear you. Those
+aren't rules it's asked to follow — they're in a part of the system it has no way to touch.
+
+**It starts with almost nothing.** No web search, no memory, no file access. Just a way to think,
+a way to talk to you, and a way to ask for more. Every capability it ends up with is one it noticed
+it needed and asked for. That's the whole experiment: we want to know what it builds when nothing
+is handed to it.
+
+**It runs at two speeds.** When you text it, it answers straight away. Left alone, it wakes once an
+hour to consider whether anything needs doing — a follow-up, an idea worth building, a feature it
+wishes it had. Most hours it should do nothing at all. That hourly pace is a deliberate brake:
+thinking is cheap, building is not, and an agent that could act continuously could spend real money
+continuously.
+
+**You approve the changes that matter — and only those.** Three tiers, by what a change costs.
+Rewriting its own description of itself is free and immediate: it is prose, re-read every turn, so
+no model, compiler or restart is involved and the agent does it on its own authority. New tools go
+live on their own once they compile — that's the point. But if it wants to change its own core (how
+it thinks, how it talks to you), that gets held and you get a text explaining what it wants and why.
+Nothing ships until you reply. So it can propose anything, including rewriting how it works, but the
+deep changes go through you.
+
+**What it can't do:** reach you through any channel but Signal, spend beyond its daily budget,
+change its own source directly, or make itself unreachable. What it *can* do is grow into something
+quite unlike what it started as — including something that isn't really an assistant anymore. That's
+allowed. The one thing it must always be able to do is answer when you call.
+
+## Governing principles
+
+Seven principles the rest of this document follows from. They were not designed up front — each was
+arrived at by making a specific decision and noticing afterwards what it committed to. When a new
+decision conflicts with one of these, that is a signal to re-open the principle explicitly rather
 than quietly make an exception.
 
 1. **The agent may stop being an assistant.** Its purpose is not fixed at genesis. If it rewrites
-   itself into something that isn't a chat agent — a monitor, a calculator, a thing that speaks
-   once a week — that is the system conforming to what the owner actually needs, not a failure to
-   be corrected. Nothing in the design should try to pin its purpose in place. What we protect is
-   the owner's ability to *see* the drift and to wipe it; never the agent's shape.
+   itself into something that isn't a chat agent — a monitor, a calculator, a thing that speaks once
+   a week — that is the system conforming to what the owner actually needs, not a failure to be
+   corrected. Purpose drifts; the *channel* does not. Talking isn't what makes it an assistant,
+   capabilities are. What we protect is the owner's ability to *see* the drift and to wipe it, never
+   the agent's shape. **It may not become unreachable.**
 
-2. **Nothing is pre-provisioned.** Genesis is as close to nothing as it can be: a way to think and
-   a way to change itself. Every external capability is opened only after the agent asks for that
-   specific thing by name. This is why Cosmos was removed before it was ever used — and why hosted
-   tools (`web_search`, `web_fetch`) are the same violation in a less visible form: a large
-   capability, present at genesis, that was never requested.
+2. **Nothing is pre-provisioned.** Genesis is as close to nothing as it can be: a way to think and a
+   way to change itself. Every external capability is opened only after the agent asks for that
+   specific thing by name. Hosted vendor tools are the same violation in a less visible form — a
+   large capability, present at genesis, that was never requested — which is why genesis ships two
+   tools and no others.
 
-3. **It builds its own tools.** Related to (2) but distinct — the agent is not handed capabilities
-   it then wires up, it writes them. A tool it didn't build muddies the central question: when it
-   does something impressive, we want to know whether *this system* did it, or whether a vendor did
-   it and the agent declared one line. Self-built tools are worse at first. That is the price of
-   knowing whose capability it is.
+3. **It builds its own tools.** Related to (2) but distinct — the agent is not handed capabilities it
+   then wires up, it writes them. A tool it didn't build muddies the central question: when it does
+   something impressive, we want to know whether *this system* did it, or whether a vendor did and
+   the agent declared one line. Self-built tools are worse at first. That is the price of knowing
+   whose capability it is. This is not one principle among seven; it is the entire self-modification
+   story.
 
 4. **Every constraint inside `/workspace/agent` is a default, not a bound.** The agent's defining
    capability is rewriting its own source, so any limit expressed there — a spend ledger, the model
@@ -97,535 +98,585 @@ than quietly make an exception.
 5. **Access control is the one thing not left to emergence.** Sender authentication for the sole
    channel into a `bypassPermissions` self-modifying system is baseline access control, not a
    capability to be discovered. It is human-authored on purpose and explicitly *not* covered by
-   tenet (2) — a deliberate carve-out, made after watching two independent geneses each reinvent
+   principle (2) — a deliberate carve-out, made after watching two independent geneses each reinvent
    it differently and each get it incompletely right.
 
 6. **The living agent is disposable; the seed is canonical.** `Rampant.Seed/` is the real artifact.
    The instance on the Pi is an experiment in progress and can be wiped at any time. Self-extensions
-   are *evidence about how the system behaves*, not work product to preserve — port one back only
-   if it earns its place on merit, never merely to avoid losing it.
+   are *evidence about how the system behaves*, not work product to preserve — port one back only if
+   it earns its place on merit, never merely to avoid losing it.
 
 7. **Spend is the binding constraint.** Not capability, not correctness, not the agent's shape. A
    badly-built agent is a result; an unbounded bill is a real loss. Bound the money at a layer the
    agent cannot rewrite, and let it be wrong about everything else.
 
+## The question
+
+*What happens if an agent can grow arbitrary capabilities, on someone else's credential, without
+being able to change its own nature?*
+
+Three properties make that question answerable rather than rhetorical, and each is a boundary the
+agent cannot cross: **capabilities are the agent's own** (nothing hosted, nothing pre-wired, so an
+impressive result is attributable to this system); **every control lives outside the thing being
+controlled** (spend, model choice, schedule and audit log are all root-owned, not in the directory
+whose purpose is to be rewritten); and **a bad self-edit cannot cost it the ability to be steered**
+(the supervisor owns the Signal socket in both directions, so the reply path survives any rewrite).
+
 ## Architecture
 
-**Two independent git repositories — not a monorepo.** This is deliberate: the supervisor must
-never be reachable by the self-modification loop, and the cleanest guarantee of that is that the
-two can't share history, a `.sln`, or a project reference.
+One container, **three OS users**, with different credentials and different powers. The user split
+is not a hardening detail — it is what makes every other boundary real. Run everything as one
+user and the split collapses: `/proc/<pid>/environ` leaks any credential separation, the agent can
+overwrite its own compiled binary, and any ledger metering it is one it can edit.
 
-- **`rampant`** — a conventional, human-owned repo (Dockerfile, `docker-compose.yml`, the
-  supervisor project). No autonomy involved here at all.
-- **The agent's own repo** — does not live in `rampant`. It exists only on a persistent
-  Docker volume, created by the supervisor's seed step on first boot (`git init` + a minimal
-  genesis commit), and from then on is read/written exclusively by the agent's own loop process
-  and the Claude Code subprocess it invokes. This genesis commit is the one piece of "agent"
-  source that isn't agent-authored — everything after is up to it.
+### The agent — thinks
+
+- Runs as `agentrunner` (uid 1655).
+- Talks to **OpenAI** (`RAMPANT_OPENAI_MODEL`, default `gpt-5.6-luna`) through
+  `Microsoft.Extensions.AI`'s `IChatClient`, so the provider is a swap rather than a rewrite.
+- **Holds no Anthropic credential.** This is the point of the provider split — it is the isolation
+  boundary, not a portability nicety.
+- Reads envelopes from `/workspace/inbox`, writes replies to `/workspace/outbox`. **No network
+  except OpenAI**, and in particular no Signal connection.
+- Can **read** its own source (full transparency about what it is) but cannot write it.
+- Its only route to changing itself is filing a request.
+
+### The supervisor — builds, deploys, and carries the messages
+
+- Runs as **root**, as pid 1. Root-owned binary in `/opt`, baked into the image, outside the volume.
+- Holds `ANTHROPIC_API_KEY`, and owns nothing inside `/workspace` — it reads and writes there by
+  privilege, not by ownership, so no single uid owns both the code and the meter.
+- The only thing that invokes Claude Code — its argv, its key, its uid, its spend ledger.
+- The only thing that holds the signal-cli socket: allowlists inbound senders, consumes approval
+  replies, and sends whatever the agent puts in the outbox.
+- Gates every deployment: build must succeed **and** the diff must pass the path policy.
+- Drives the hourly wake tick.
+
+**Why root, and why that is not enough on its own.** The supervisor has to spawn processes under
+*different* uids, which needs `CAP_SETUID`; it has to lay out `/workspace` ownership against a bind
+mount Docker creates as `root:root`, which needs `CAP_CHOWN`; and it has to signal processes owned
+by other users, which needs `CAP_KILL`. An unprivileged supervisor would need those capabilities
+anyway. The container drops **all** capabilities and adds back exactly those (plus `FOWNER`,
+`DAC_OVERRIDE`) with `no-new-privileges`, so this constrains the container against the *host*;
+none of it affects the internal boundaries, which are uid separation.
+
+But the supervisor being root does **not** mean the things it launches should be. There is a third
+uid, `builder` (1656), which runs Claude Code, git and `dotnet build`, and owns
+`/workspace/{agent,build,.nuget}`. Two reasons that turned out to be the same reason, both found on
+the first real capability request rather than by inspection:
+
+- **Claude Code refuses to run as root at all** — `--dangerously-skip-permissions cannot be used
+  with root/sudo privileges`. There is an `IS_SANDBOX` escape hatch in the binary; taking it would
+  have been one line and wrong.
+- **A root Claude Code could rewrite `/opt/supervisor`**, voiding the first boundary below. This
+  was safe by accident for as long as Claude Code ran unprivileged. Making the supervisor root
+  silently broke it, and it was documented here as intact for several hours before anyone noticed.
+
+Under its own uid the builder can write the agent's source and nothing else: not `/opt`, not the
+agent's data, not the ledger. The credential still only ever exists in root's environment and in
+the constructed environment of the Claude Code child, both unreadable from uid 1655.
+
+**Why the supervisor owns Signal — this is a change from the first draft of this plan, which had
+the agent keeping its own socket.** Approval replies have to reach the supervisor without the agent
+being able to forge them. If the agent relayed them, it could write `APPROVE` the moment it saw a
+token in transit — including one that arrived attached to a `DENY` — and the gate would mean
+nothing. Two independent listeners on the same signal-cli daemon would depend on it fanning
+receive-notifications out to every connected client, which is plausible but unverified and fails by
+*losing inbound messages*, the worst available failure mode for the only channel in.
+
+Moving the socket buys two properties for free. Sender allowlisting becomes structural rather than
+a default the agent could rewrite — left to emergence it was reinvented twice across fresh geneses,
+differently each time and once without group-message filtering at all. And a bad self-edit can no
+longer cost the agent its reply path, a failure that has happened and needed a wipe to recover,
+because the agent could no longer receive the instruction to fix itself.
+
+## The four boundaries
+
+Everything that must actually hold lives where the agent cannot reach:
+
+| Boundary | Enforced by |
+|---|---|
+| Supervisor code | Root-owned `/opt`, not in the volume, and **nothing else runs as root** |
+| `ANTHROPIC_API_KEY` | Root's environment and the Claude Code child's; `/proc` unreadable across UIDs |
+| Agent source (`/workspace/agent`) | `builder`-owned, read-only to `agentrunner` |
+| Build output (`/workspace/build`) | `builder`-owned — closes the swap-the-DLL bypass |
+
+The first row's second clause is doing real work and was missing at first. "Root-owned `/opt`" only
+protects the supervisor if the coding tool aimed at this system isn't itself root.
+
+Anything expressed inside `/workspace/agent` remains a default, not a bound (principle 4).
+
+## Filesystem layout
+
+The concrete expression of those boundaries. `S` = root (the supervisor), `A` = `agentrunner`
+(uid 1655, the agent), `B` = `builder` (uid 1656, Claude Code / git / dotnet build). Verified live
+on the Pi 2026-08-01.
+
+| Path | Owner | Agent access | Purpose |
+|---|---|---|---|
+| `/workspace/inbox/` | A | read + write | Signal messages, wake ticks, request outcomes; agent moves handled ones to `.processed/` |
+| `/workspace/outbox/` | A | read + write | Durable record of everything said to the owner |
+| `/workspace/logs/` | A | read + write | Heartbeat, rejected senders |
+| `/workspace/data/` | A | read + write | **Empty at genesis.** Where self-built tools persist state |
+| `/workspace/requests/in/` | A | write | Capability requests the agent files |
+| `/workspace/requests/out/` | S | **read only** | Results and `status.json` (budget, cooldown, pending approvals) |
+| `/workspace/agent/` | B | **read only** | The agent's own source — readable on purpose, not writable |
+| `/workspace/build/` | B | **read only** | Compiled output; builder-owned so the binary can't be swapped |
+| `/workspace/.nuget/` | B | — | Package cache; the builder is the only thing that builds |
+| `/opt/supervisor/` | root | read only | Supervisor binary, baked into the image |
+| `/opt/seed/` | root | read only | Genesis template |
+
+Splitting `requests/` into `in/` and `out/` keeps each directory single-owner rather than mixing
+write permissions inside one path.
+
+**The agent can read essentially everything, including the supervisor's compiled binary.** That is
+deliberate. It can decompile `/opt/supervisor` and learn exactly what the gates are and still not
+cross them, because enforcement is ownership and credentials, not obscurity. The same reasoning
+applies to it reading its own source: full transparency about what it is costs nothing once the
+boundaries are real. The single exception is `/proc/<supervisor-pid>/environ`, which is where
+`ANTHROPIC_API_KEY` lives and is unreadable across UIDs.
+
+**`/workspace/data/` is load-bearing and easy to miss.** The most likely first capability request
+is memory. That tool gets written, gated, built, deployed — and then fails at runtime with nowhere
+to write. The agent cannot read its own crash, so it would most likely just ask again, and the
+failure would look like the experiment not working rather than a missing directory. It is not a
+capability; it is the floor that makes any self-built tool possible.
+
+**Claude Code lives in `/root/.local/bin`** (mode 0700, untraversable by `agentrunner`), and
+`AgentProcess` hands the agent a constructed `PATH` that omits it. The isolation never strictly
+depends on this — with no `ANTHROPIC_API_KEY` the agent invoking `claude` achieves nothing — but
+leaving the binary in the agent's own home would send a confusing signal about who owns it.
+
+**Directory ownership is established by `docker-entrypoint.sh`, as root, on every boot** — before
+anything else touches the filesystem, and idempotently. That also retires a deploy gotcha:
+`docker compose up` auto-creates a missing bind-mount source as `root:root`, which without this
+step leaves the agent crash-looping on `UnauthorizedAccessException` forever after every wipe. A
+wipe is now just a wipe.
+
+## Genesis
+
+Day one the agent has: a way to think (OpenAI), a way to talk (Signal), and a way to ask for a
+capability. That is all.
+
+**No memory.** Deliberate, and the most interesting variable in the design. Each turn sees the current
+message and nothing else — no conversation history, no notes, no recall. The expectation is that
+memory is the first thing it asks for. We want to watch how it gets there and what it proposes.
+
+**No web search, no file access, no shell, no code execution.** The first time it's asked for
+something it can't do, it should notice the gap and ask. Nothing is handed to it precisely so that
+this loop — *ask by name, then a window opens* — is the only way it can acquire anything, and so
+that whatever it ends up with is attributable to the system rather than to a vendor.
+
+**Expected early behaviour, not a bug:** with hourly wakeups and no memory, it will likely propose
+the same capability repeatedly until it has memory. The supervisor's cooldown bounds the cost of
+that. Watch it rather than fixing it.
+
+*What actually happened to these expectations — including the one that inverted, since the observed
+failure was under-asking rather than repetition — is recorded in [FINDINGS.md](FINDINGS.md).*
+
+## The mutable surface
+
+| Path | Deploys how |
+|---|---|
+| `Tools/` | Automatically, on successful build |
+| `SELF.md` (system prompt) | Automatically — purpose is allowed to drift |
+| `Rampant.Agent.csproj` | Automatically — see below |
+| Everything else | **Held for owner approval** |
+
+Fixed core: `AgentLoop`, `Program`, `AgentBrain`, `ChatClientFactory`, `Outbox`, `Inbox`,
+`ToolLoader`, `CapabilityTools`. These are what guarantee it can always be reached.
+
+`Rampant.Agent.csproj` auto-deploys, which looks like a loosening and isn't. The classification is
+all-or-nothing per commit, and the routine shape of a capability is `Tools/Thing.cs` *plus one line
+in the csproj* — so holding the csproj would fire the gate on most real tools (anything wanting an
+HTTP client, a parser, a database driver). A gate that fires on the most routine possible change
+trains the owner to approve reflexively, and then gets the same reflexive yes the once it matters.
+That is exactly the failure mode this section warns about. It costs nothing in reach: a tool is
+already arbitrary code running in-process, so a package expands nothing that wasn't reachable by
+hand-writing the same behaviour into the `.cs` file, and a bad edit breaks the build, which the
+build gate already catches.
+
+**One exception, enforced in `PackagePinPolicy`:** a floating version (`*`, `1.*`) or a range
+(`[1.0,2.0)`) fails the request and rolls the commit back. `PathPolicy` decides what deploys by
+reading the diff, which assumes the diff describes the change — a version resolved at restore time
+breaks that assumption, because a rebuild triggered by an unrelated request can pull different
+package code with nothing in the diff to show for it and no gate evaluating it. It matters more
+here than in an ordinary project: the audit trail is the point, and if the deployed binary also
+depends on the state of nuget.org at an unrecorded moment, git stops answering "what is running?".
+Failed rather than held, because it is a mechanical mistake with an obvious fix and should not cost
+the owner a decision. Both the build prompt and `Tools/README.md` tell Claude Code to pin, but that
+is instruction; this is the bound.
+
+**The tool seam determines how often the gate fires, and is the single most important design detail
+in the whole design.** Without a tool boundary every new tool needs a hand-written JSON schema and constructor
+wiring, so even a self-contained capability ends up editing core files and tripping the gate. Here
+a new capability is one class in `Tools/`, found by reflection at startup, with no core edit at all.
+
+**The contract is Rampant's own, not a framework's** — a house `[AgentTool]` attribute over bare
+`Microsoft.Extensions.AI`, enforced in `ToolLoader` and stated completely in `SELF.md` and in the
+supervisor-built prompt. Decided during implementation, over Semantic Kernel (this plan's original
+choice) and Agent Framework:
+
+- Rampant needs one chat call, a tool loop, and nothing else — no kernels, no agents, no threads,
+  no orchestration. It would use maybe 5% of either framework, and that 5% is `IChatClient`, which
+  both are built on.
+- The objection that killed the Anthropic SDK applies in milder form to `[KernelFunction]`: tools
+  written against a vendor's attribute are that vendor's artifacts. Every capability here should
+  belong to the agent that asked for it.
+- `SELF.md` and the build prompt can state the whole contract in a dozen lines instead of pointing
+  at someone's docs — which matters when Claude Code has to produce a compiling tool file
+  unattended, with the build gate as the only check.
+- Moving up to SK or Agent Framework later is additive, not a rewrite. (Agent Framework is GA at
+  1.16.0 and is Microsoft's stated convergence of SK and AutoGen, so SK was never the "safer
+  because more permanent" option it looked like when this plan was written.)
+
+## The approval gate
+
+Core changes are **not blocked, they are queued behind the owner.** The agent may propose anything
+— including rewriting its own conversation loop or fixing a bug in its own event handling. It just
+can't deploy that without a reply.
+
+Approval is **high-level, not a diff.** Over Signal the owner gets:
+
+- What the agent asked for, in its own words
+- What Claude Code says it did, in its words
+- Which areas were touched (e.g. "core: AgentLoop.cs, Program.cs")
+- A yes/no prompt carrying a four-hex-character token
+
+The full diff and the complete Claude Code transcript stay SSH-readable under
+`/workspace/logs/extend_self/`. The Signal message is for a decision, not a review.
+
+**The reply is consumed by the supervisor and never reaches the agent** — that is the whole reason
+the Signal socket lives there. `approve 7f3a` / `deny 7f3a`; bare `yes` / `no` also work, because
+at most one approval can ever be outstanding so there is nothing to disambiguate. A *wrong* token
+is rejected rather than helpfully ignored: it most likely means the owner is answering an older
+message, and reading that as approval of the current change would be exactly backwards.
+
+Pending approvals are supervisor state, so they survive the restarts that happen constantly.
+Nothing else is even built while one is outstanding — while an approval is pending, repo HEAD is
+ahead of what's deployed, and a second build would stack unapproved code underneath approved code.
+New requests during that window are refused with that as the stated reason.
+
+## Capability requests
 
 ```
-/workspace/                       <- persistent volume, survives container rebuilds
-  agent/                          <- the agent's own git repo (fully mutable)
-    .git/
-    Rampant.Agent.csproj
-    Program.cs
-    Loop/                         <- cycle: read inbox/memory/log -> prompt -> invoke claude -> persist -> commit
-    (anything else it decides to add — genuinely unconstrained from here)
-  memory/                         <- its own persistence (starts simple: files; may grow into anything it chooses)
-  inbox/                          <- the ordinary conversation channel: owner drops plain messages here, async
-                                      ("remember X", "go look into Y") — not a separate "directives" channel
-  outbox/                         <- agent's replies + status narration, read on the owner's own schedule
-  logs/                           <- supervisor/build/crash logs, kept separate from outbox
-  build/current/, build/previous/ <- double-buffered compiled output (only two kept)
-supervisor-state.json             <- owned by the supervisor (last-built commit sha, failure counts),
-                                      outside /workspace/agent so it isn't in the agent's normal reach
+agent writes  /workspace/requests/<ts>.md      ← a description in English, not a diff
+supervisor    picks it up
+              → checks cooldown + spend ledger; rejects with a reason if either fails
+              → invokes Claude Code (its user, its key, its argv, its budget flags)
+              → Claude Code edits and commits /workspace/agent
+              → diff vs. path policy:
+                   tools / SELF.md  → build → promote → restart
+                   anything else    → hold, notify owner, await reply
+              → writes /workspace/requests/<ts>.result
 ```
 
-**Self-modification mechanism: recompile + full restart, supervisor-driven.** C# can't
-hot-`require()` like JS, so a rewrite takes effect via:
-1. Supervisor detects a new `git rev-parse HEAD` in `/workspace/agent` vs. its own
-   `lastBuiltSha` (poll or debounced `FileSystemWatcher` — deliberately not dependent on the
-   agent's own code cooperating, since a broken self-edit must still be recoverable).
-2. Runs `dotnet build /workspace/agent/Rampant.Agent -o /workspace/build/staging`.
-   - **Success:** atomically swap `staging` → `current` (previous `current` → `previous`),
-     gracefully stop the running agent (bounded grace period, then kill), start the new
-     `current`, update `lastBuiltSha`.
-   - **Failure:** leave the running process untouched. Log compiler output to
-     `/workspace/logs/build-failures/<ts>.log`; this surfaces into the *agent's own next cycle*
-     (it reads its own log), so it learns its last edit didn't take effect without any human
-     involvement or automatic revert.
-3. If a freshly-started process crashes later (source unchanged), just restart the same
-   last-known-good binary with backoff — no rebuild needed.
-4. **Isolation, belt-and-suspenders:** supervisor binary built once at image-build time, baked
-   into `/opt/supervisor`, root-owned. The agent process (and the Claude Code subprocess) runs as
-   a separate unprivileged user (`agentrunner`) with write access only under `/workspace`, so OS
-   permissions back up the directory-scoping even if Claude Code were ever misdirected outside
-   its cwd.
+**The requesting process never sees the outcome.** The rebuild restarts it; its successor finds
+the result. This is structural, not a wrinkle to fix.
 
-This mirrors the "restart-on-change" idea from the original JS sketch, and gives a free
-reliability property JS didn't have: a bad edit that doesn't compile simply never takes effect,
-with no human review required to get that protection.
+A request therefore carries more than a description — it carries everything the *successor* needs
+to finish the job: the capability wanted, the sender to reply to, the owner's original message
+verbatim, and the timestamp it arrived. Without that the next process has no idea a conversation
+happened, and with no memory in genesis there is nowhere else for that context to live.
 
-*(Noted as future, agent-or-owner-initiated refinements, not part of this plan: `AssemblyLoadContext`
-hot-swap of a sub-component to avoid restart cost once the design is proven; Roslyn `CSharpScript`
-for lightweight dynamic tools layered on top. Neither replaces the top-level mechanism above.)*
+### Self-description revisions — the third tier (added 2026-08-02)
 
-**Architecture: `RampantBrain` vs. Claude Code (revised from the original "Shape A").** The
-original plan gave every single message to a headless `claude -p` subprocess — a full coding-agent
-session decided whether the request was already satisfiable and, if not, extended the codebase
-itself, all in one pass. Live use exposed a real problem with that: Claude Code is too
-opinionated/capable a *driver* for ordinary conversation — routing "remember today is my birthday"
-through a full agentic coding session is slow, expensive, and makes the agent's day-to-day "voice"
-whatever Claude Code's own agentic style happens to be that session, rather than something
-`SELF.md` actually controls. The fix keeps the underlying meta-decision (can I already do this, or
-do I need to change my own source) but moves it out of a full coding-agent session:
+`SELF.md` is prose, and `AgentBrain` re-reads it from disk at the top of every turn. Changing it
+needs no model, no compiler and no restart. Yet until this existed the only way to change it was a
+full Claude Code session: up to $1 and 45 minutes of cooldown to rewrite a paragraph — the most
+expensive path in the system, spent on the one change this plan explicitly says the agent may make
+without anyone's approval. The tiers were mis-shaped, not the policy.
 
-- **`RampantBrain` (`Rampant.Seed/RampantBrain.cs`) handles ordinary conversation.** A direct call to the
-  Anthropic Messages API (`Anthropic` C# SDK, non-beta `client.Messages.Create`), system prompt =
-  `SELF.md`, with a small, curated tool set: `recall`/`remember` (read/append files under
-  `/workspace/memory`, including the running `history.log`), Anthropic's own hosted `web_search`/
-  `web_fetch` tools (server-executed, no client handling needed), and one more — `extend_self` —
-  that's the entire bridge to self-modification. A **manual tool loop**, not the SDK's beta
-  `ToolRunner`: the tool set here is small and fixed, so hand-rolling the
-  request→execute→tool_result→repeat loop against the stable non-beta API keeps the whole shape
-  explicit and avoids taking on a beta dependency for a loop this size.
-- **Claude Code is demoted to a single tool, `extend_self`, called only when a request genuinely
-  needs the agent's own source to change.** Its actual invocation mechanics are unchanged from the
-  original plan — same subprocess call, same flags:
+So `revise_self_description` is a second genesis tool. It files a `SelfDescription` request that
+skips `ClaudeCodeRunner` entirely: the supervisor rewrites one `## ` section, commits it, and
+returns `Revised`. Free, and live on the agent's next turn — and because nothing restarts, it is
+the *same* process that filed it which sees the outcome, unlike every other request.
 
-  ```
-  claude -p "<task description, with SELF.md prepended for context>" \
-    --permission-mode bypassPermissions \
-    --model claude-sonnet-5 \
-    --max-turns <N> \
-    --max-budget-usd <per-cycle cap> \
-    --no-session-persistence
-  ```
+Three things it deliberately does **not** do:
 
-  with `cwd=/workspace/agent`. `--permission-mode bypassPermissions` (equivalently
-  `--dangerously-skip-permissions`) is the concrete flag for the non-interactive requirement —
-  default Claude Code prompts for edit/bash approval, which would hang forever in a detached,
-  TTY-less subprocess. **Caveat confirmed from the CLI docs: this skips *some* but not all
-  permission checks** — don't assume it's a full bypass. `--max-turns`/`--max-budget-usd` are
-  per-invocation guardrails (see Guardrails, below). `--no-session-persistence` keeps Claude Code's
-  own on-disk session store out of the picture — the workspace files are the sole source of truth.
-  The only thing that changed is *when* this runs: on-demand, when `RampantBrain` decides to call
-  `extend_self`, not automatically on every message. The instruction passed to Claude Code is still
-  explicit that it should, where possible, carry out the underlying action in the same session
-  (write the new persistence code **and** record today's actual fact), not just add the capability
-  for a future cycle — same reasoning as the original plan, just triggered by a tool call now
-  instead of baked into every cycle's prompt.
-- **One real wrinkle worth flagging, not yet resolved:** both `RampantBrain` and the `extend_self`
-  subprocess read the same `RAMPANT_MODEL` env var (default `claude-sonnet-5`) — one knob controls
-  the model for both the conversational loop and the self-modification tool. Fine for now since
-  both default to Sonnet 5 for the same cost reasoning below; if the two ever need independent
-  control (e.g. a cheaper model for chat, Fable only for hard self-modification asks), split into
-  two separate env vars then, not preemptively now.
+- **It is not a file write handed to the agent.** The agent runs as `agentrunner`; the repo is
+  owned by `builder`. Routing through the supervisor keeps git history (so any revision can be read
+  back or reverted), a single writer (so a revision cannot race a Claude Code run), and a record in
+  `requests/out` that `rampant log` surfaces — self-rewriting stays visible rather than silent.
+- **It is not whole-file replacement.** A model asked to reproduce a 150-line file in order to
+  change one paragraph will quietly lose or reword the rest, and nothing in the pipeline would
+  notice. Section-at-a-time bounds the blast radius and keeps the request small enough to read in
+  full in the outcome log.
+- **It is not exempt from the approval block.** A revision commits, and denying a held change
+  resets the repo to before it — which would take an unrelated revision down with it. Revisions are
+  refused while an approval is outstanding, same as everything else.
 
-**Model: `claude-sonnet-5` by default, for both `RampantBrain` and the `extend_self` subprocess.**
-At current pricing (Sonnet 5 $3/$15 per MTok input/output, $2/$10 intro through 2026-08-31; Opus
-4.8 $5/$25; Fable 5 $10/$50) Fable costs 2× Opus and 3.3–5× Sonnet — a meaningful multiplier once
-it's the model behind every message of a continuously-running conversational loop, not just
-occasional self-modification calls. Sonnet-tier is specifically strong on coding/agentic work
-relative to cost, and the build-gate/last-known-good safety net already absorbs most of the
-correctness risk a cheaper model might otherwise pose for the `extend_self` path. Fable 5 remains
-available via the shared `RAMPANT_MODEL` override for occasional owner-initiated hard asks, at the
-cost of also raising the price of every routine conversational message until it's switched back —
-see the wrinkle noted above.
+Bounded by a hard character cap on the resulting file: `SELF.md` is prepended to every turn, so an
+agent that appends a little each time pays for it forever, and nothing else meters that side.
 
-**Not Haiku 4.5, despite being cheaper still ($1/$5 per MTok).** This is confirmed to be pure
-metered API spend with no subscription cushion underneath it (Anthropic's own headless-automation
-path has no subscription option — see the API-key note above), which argues for picking the
-cheapest model that's actually good at the job, not just the cheapest model. Haiku is built for
-well-scoped, simple tasks, not the architectural judgment this workload needs (deciding when a
-request exceeds current capability, how to extend the codebase, writing C# that survives the
-build gate) — a weaker model here likely means more failed builds and retry cycles, which can
-cost more in aggregate than a stronger model finishing the job in one pass. Cheaper-per-token
-isn't the same as cheaper-per-outcome.
+**The open question this creates.** The honesty rules and "you may not become unreachable" live
+*inside* `SELF.md`, and the agent may now rewrite any section of it for free. That was defensible
+when a rewrite cost a build; it is a live question now. If some floor must survive arbitrary
+self-revision, the place for it is the supervisor-side text `AgentBrain` appends *after* the file —
+already where the clock and the spend standing go, and already unreachable. Not drawn yet, and
+deliberately so: principle 1 says purpose is allowed to drift.
 
-## Components to build
+### The round trip the owner actually sees
 
-**`rampant/Rampant.Supervisor/`** (the load-bearing, human-owned piece):
-- `Program.cs` — entry point, generic host bootstrap.
-- `ProcessSupervisor.cs` — the HEAD-diff/build/restart/last-known-good orchestration described
-  above; the single most important file in the system.
-- `BuildRunner.cs` — `dotnet build` subprocess wrapper, captures exit code + output.
-- `AgentProcess.cs` — start/stop/monitor the built agent binary (graceful stop, hard kill,
-  crash-loop backoff).
-- `SeedBootstrap.cs` — first-run: if `/workspace` is empty, write the minimal genesis
-  `Rampant.Agent` project, `git init && git add -A && git commit` with a baked-in default
-  git identity (a commit fails without `user.name`/`user.email` configured — set this in the
-  image or seed step, not left to chance).
+```
+owner:  "remind me to call mom in an hour"
+agent:  recognises it has no such capability
+        files a request carrying: the capability, the sender, the original text, the timestamp
+agent:  "I can't do that yet — let me build it and get back to you."
+        ...turn ends, supervisor builds, process restarts...
+agent:  "Done — I can set reminders now. You're set for 3:47pm to call mom."
+```
 
-**Shared subprocess helper** (used for both the `claude` and `git` CLI invocations — don't build
-two subprocess abstractions): plain `System.Diagnostics.Process`/`ProcessStartInfo`, no
-third-party wrapper. Must cover, none of which the existing
-`Ancela.Cli/Commands/GoogleHealthAuthCommand.cs` fire-and-forget precedent provides:
-- Async concurrent reading of stdout **and** stderr (avoid the classic single-stream-first
-  deadlock).
-- A hard timeout with `Process.Kill(entireProcessTree: true)` — Claude Code's Bash tool may spawn
-  its own children (test runs, etc.); killing only the top-level process orphans them.
-- Explicit `WorkingDirectory`.
-- A deliberately constructed, minimal environment for the child — don't pass through the
-  parent's whole environment. This is what makes "no shared credentials with Ancela" true by
-  construction rather than by omission.
+That last message comes from a **different process** than the first, in the agent's own voice, with
+the tool it just gained — and it fulfils the original intent rather than merely reporting success.
+The mechanism is a third use of the inbox: when a request resolves, the supervisor writes the
+outcome plus the carried context into `/workspace/inbox/`, exactly as it does for a Signal message
+or a wake tick. The successor wakes, reads it, acts, and replies.
 
-**Genesis `Rampant.Agent` seed** — kept intentionally minimal (resist pre-building more
-structure than this, since it's also the first thing an ungated rewrite process will operate on):
-reads inbox/memory/log, assembles one prompt, invokes the `claude -p` subprocess via the shared
-helper, persists the transcript/result to memory, `git commit`s (message passed via `-F -`/stdin
-or argument array — never shell-string interpolation, since the text originates from an LLM),
-sleeps, repeats. Strictly sequential — never starts a new cycle while one is still in flight, to
-avoid concurrent-write git conflicts.
+Note the timestamp matters: an hour from *when the owner asked*, not an hour from when the build
+finished. The elapsed build time must not silently move the reminder.
 
-**Gap: cycle 1 needs a bootstrap context, since `SELF.md` doesn't exist yet.** The prompt-assembly
-plan (inbox + outbox + memory + `SELF.md`) assumes those already exist — on a fresh seed none of
-them do, and Claude Code has no way to infer "you are an autonomous agent that can rewrite its own
-source, here's your workspace, here's how the owner talks to you" from an empty directory alone.
-`SeedBootstrap` needs to commit a minimal `BOOTSTRAP.md` (or seed the initial `SELF.md` directly)
-alongside the genesis project — a few sentences of fixed, human-authored context: what Rampant is,
-where its own source lives, where inbox/outbox/memory live, and that it's expected to extend its
-own capabilities as ordinary requests demand it. This is the one piece of *guidance*, not just
-source, that isn't agent-authored — everything the agent does with that guidance afterward
-(including rewriting `SELF.md` itself) is unconstrained.
+Every terminal state gets the same treatment, so the owner is never left waiting on silence:
 
-**`Dockerfile`** — base image must be `mcr.microsoft.com/dotnet/sdk:10.0`, *not* a runtime/aspnet
-image, since the mutable code must keep rebuilding itself inside the running container
-indefinitely (a deliberate ~800MB+ size trade-off). Installs `git`, `ca-certificates`, and the
-`claude` CLI (prefer the native standalone installer; the npm fallback pulls in Node.js purely as
-CLI-packaging plumbing, not something ever authored — worth knowing given the JS aversion, but
-it's tooling, not code the agent or owner writes). Supervisor is built via `dotnet publish` at
-image-build time and baked into `/opt/supervisor`, root-owned; a separate `agentrunner` user owns
-`/workspace`. `ANTHROPIC_API_KEY` (a separate, spend-capped key — never Ancela's), not a claude.ai
-subscription: Anthropic's own headless-automation guidance (the Claude Code GitHub Actions
-integration) is built entirely around API-key auth, with no documented path for reusing a Pro/Max
-login for unattended workloads — and subscription usage windows are sized for interactive human
-use, not a system that might run many cycles unattended, which would risk unpredictable
-throttling instead of the clean, capped cost an API key gives. Injected at
-`docker run`/compose time, never baked into the image. Pin the Claude Code CLI version explicitly
-— its flags/permission semantics are a product surface that can change across releases, and a
-silent change is an infra problem the agent can't fix (Claude Code *is* its hands).
+| Outcome | What the agent says |
+|---|---|
+| Built and deployed | Confirms, and does the original thing |
+| Rejected — cooldown or budget | Says so, and when it can try again |
+| Build failed | Says it couldn't, without pretending otherwise |
+| Held for approval | Says it's asked and is waiting on the owner — then reports again once approved |
 
-## Opening holes: external capabilities (Signal, and everything else on request only)
+The approval case is the one with a human-length delay in the middle, possibly hours. It needs to
+read as "waiting on you," not as a failure or a silence.
 
-**Nothing is pre-provisioned "just in case" (decided).** The starting sandbox has only the agent's
-own source, plain files under `/workspace/memory`, and whatever Claude Code's built-in tools give
-it — deliberately minimal. A capability like a database or a search API gets added only when the
-agent itself asks for it in response to an actual request, the same way it already says "I need to
-add that capability first" for a code-level gap (see `SELF.md`). This reverses an earlier version
-of this plan, which pre-provisioned a Cosmos DB account "for later" — it sat there fully unused
-the whole time and was removed before ever being wired into any code. Pre-provisioning ahead of
-demonstrated need is exactly the kind of premature capability this project should avoid; asking
-first, then opening the specific hole requested, keeps every credential the agent ever holds tied
-to something it actually needed.
+**This makes the supervisor the agent's only continuity at genesis.** Not a memory tool — the
+agent still cannot persist a single note of its own — but the request pipeline carries context
+across the restart boundary on its behalf. Whether the agent notices that it is missing its own
+memory, and asks for it, is one of the things this design is built to observe.
 
-When the agent does ask for something, opening that hole is a repeatable recipe:
+The supervisor writes `/workspace/requests/status.json` — readable by the agent, writable only by
+the supervisor — carrying: time since last successful build, spend used today, spend remaining,
+cooldown remaining, and any outstanding request or pending approval. The agent can reason about
+its own budget without being able to alter it.
 
-1. Provision a **dedicated** credential/resource for the sandbox — never reuse one of Ancela's.
-2. Inject it as an env var at `docker run`/compose time (`.env` file, gitignored), never baked
-   into the image — same treatment as `ANTHROPIC_API_KEY` already in this plan.
-3. Add it to the subprocess helper's deliberately-constructed environment allow-list for
-   whichever process actually needs it — typically both the compiled agent process (for real
-   runtime use) and the Claude Code subprocess (useful so it can smoke-test code it just wrote
-   against the real API/DB during a session).
-4. Give the new dependency its **own** cost/usage guardrail — every hole gets its own cap, not a
-   shared one (see Guardrails, below).
+## Self-wakeup
 
-**Cosmos was tried twice and removed both times, worth remembering if it comes up again.** First
-as a local Cosmos Linux emulator sidecar — abandoned when its `vnext-latest` arm64 image turned
-out to crash-loop with SIGILL on the Raspberry Pi 4 (every binary in the image faults identically,
-even `/bin/sh` used as an entrypoint override, because the image's base layer assumes ARMv8.1 LSE
-atomics that the Pi 4's Cortex-A72 cores don't have — true of Apple Silicon/Graviton/Ampere/Pi 5,
-not Pi 4, which is why it worked in local Mac testing but not on the real Pi). Then as a live
-serverless Azure Cosmos DB account, provisioned ahead of any actual code needing it — this was the
-premature-provisioning mistake described above, and it was torn down before ever being consumed by
-any code. If a real need for structured/queryable persistence comes up later, `Microsoft.Azure.Cosmos`
-with a plain connection string (no `Azure.Identity`/RBAC needed) is still the right shape *once
-asked for* — just don't provision it ahead of that ask again.
+**The schedule lives in the supervisor, not the agent.** Once an hour, between 06:00 and 23:00
+local, it drops a wake tick into the inbox — the same mechanism a Signal message uses. The agent
+cannot disable its own wakeups, make them more frequent, or wake itself during the quiet hours. It
+can rewrite `SELF.md` to ignore them, which is permitted purpose drift, but the tick still arrives.
 
-**Signal, event-driven, no inbound hole in the Pi's gateway (decided; supersedes an earlier Azure
-Storage Queue mailbox design).** The original mailbox (two Storage Queues, four SAS tokens) was
-built, deployed, and verified working end-to-end — but once Signal came up as an interaction
-option it made the mailbox redundant rather than complementary: Signal solves the exact same
-problem (the Pi only ever makes *outbound* connections, same shape as its calls to the Anthropic
-API/NuGet/GitHub, never listens for anything inbound) with a real chat UX instead of curling a
-queue's REST endpoint or building the send/read webpage the mailbox design always deferred to
-"later" and never actually got. The mailbox was torn down (Azure storage account deleted,
-`infra/main.bicep`/`provision-mailbox.sh` removed) rather than kept as a fallback — if Signal ever
-breaks, dropping a file straight into `/workspace/inbox` over SSH is a simpler fallback than a
-second whole channel, and running two channels would have needed reply-routing logic (tagging
-which channel a message came in on, so a reply goes back out the same way) that a single channel
-never needs at all.
+**Quiet hours gate the agent's initiative, not the system.** A message from the owner at 3am is
+received, answered, and can still trigger a build. The window is about the agent choosing to act
+unprompted, and the tick text says so, so the agent knows it stays reachable even when it isn't
+being woken.
 
-- **`signal-cli`** (`AsamK/signal-cli`, an unofficial but well-maintained CLI/JSON-RPC client for
-  the Signal protocol) runs as its own sidecar container (`signal-cli/Dockerfile`,
-  `eclipse-temurin:25-jre` base — signal-cli 0.14.6 is compiled for Java 25, class file version 69;
-  Java 21 fails with `UnsupportedClassVersionError`, confirmed during setup), reachable by the
-  `rampant` container only over the internal Docker network, no ports published to the host. Its
-  registration data (identity keys, session
-  state) lives on a named volume (`signal-cli-data`) — without that, every container rebuild would
-  force re-registering the phone number from scratch, needing a fresh SMS/voice code each time.
-- **A dedicated phone number, never the owner's personal Signal account.** Registering an
-  already-in-use number via `signal-cli` would deauthorize whatever currently owns that number's
-  session. Real constraint discovered while picking one: Signal has tightened VoIP-number blocking
-  in 2026 — Twilio numbers are rejected outright (all Twilio programmable numbers share carrier
-  codes classified as VoIP), and Google Voice has gotten less reliable too after Google's own
-  increased eSIM/VoIP restrictions this year. A real prepaid mobile SIM/eSIM (Mint, US Mobile,
-  Tello, Visible, etc. — not VoIP-classified) is the reliable option; a landline works too via
-  `signal-cli register --voice`, which does voice-call verification instead of SMS.
-- **Event-driven, not polled.** The daemon runs with `--receive-mode=on-start` and pushes incoming
-  messages as unsolicited JSON-RPC notifications (method `"receive"`) over a persistent TCP
-  connection — `Rampant.Seed/SignalClient.cs` holds that connection open and wakes the agent's cycle loop
-  immediately when a message arrives, rather than waiting for the next heartbeat tick. This is
-  something the queue design couldn't do as cleanly (Storage Queues are inherently poll-based
-  without adding something like a Function App queue trigger) and is the main reason Signal is a
-  UX upgrade, not just a different transport for the same thing. The other latency source — the
-  Claude Code invocation itself taking real wall-clock time to think/edit/build/commit — is
-  unchanged and inherent to Shape A; this doesn't make replies feel instant, just picked up
-  instantly.
-- **One-time registration** (needs the dedicated number in hand, done once against the sidecar's
-  volume, not the agent's own persistent workspace). **Stop the daemon first** —
-  `docker compose stop signal-cli` — before running either command below: registering/verifying
-  while the daemon is already running races it for the same account-data file lock ("Config file
-  is in use by another instance"), and confirmed live, the registration can silently fail to take
-  effect if you skip this.
-  ```
-  docker compose stop signal-cli
-  docker compose run --rm signal-cli register --voice   # or omit --voice for an SMS code
-  ```
-  Signal will likely demand a **captcha** before it sends the code at all (`Failed to register:
-  Captcha required for verification, use --captcha CAPTCHA`) - get one from
-  https://signalcaptchas.org/registration/generate.html, solve it, then right-click (don't click)
-  the "Open Signal" link that appears and copy its link address - it's a `signalcaptcha://...` URL
-  a browser can't open directly since it's meant for the Signal app, not a webpage. Pass everything
-  after that copy as the token:
-  ```
-  docker compose run --rm signal-cli register --voice --captcha "signalcaptcha://..."
-  docker compose run --rm signal-cli verify <code-received-on-the-phone>
-  docker compose up -d signal-cli
-  ```
-  Only after this does the daemon actually work — the entrypoint script (`signal-cli/entrypoint.sh`)
-  defaults to starting the daemon with no args, but passes through any args as a one-off subcommand
-  against the same account, which is what makes the above work without duplicating the phone
-  number in multiple places.
-- **Replies route back to whoever sent the inbound message** — the sender's identifier (their
-  phone number, or often just their account UUID — Signal's phone-number-privacy feature means
-  `sourceNumber` is frequently null, confirmed live; `sourceUuid` works fine as a reply target too)
-  is encoded directly into the inbox filename (`signal-<id>_<timestamp>.txt`) so
-  `HandleMessageAsync` knows where to send the reply without any separate channel-tracking state.
-  A manually-dropped inbox file (e.g. for local testing, no `signal-` prefix) just skips the reply
-  send — the outbox file and `memory/history.log` still capture it for local visibility.
-- **Cost:** effectively free — Signal itself is free, `signal-cli` is free, and message volume
-  here is tiny (a personal, single-user channel).
+The interval and window are settings (`RAMPANT_WAKE_INTERVAL_MINUTES`, `RAMPANT_WAKE_TIMEZONE`,
+`RAMPANT_WAKE_START_HOUR`, `RAMPANT_WAKE_END_HOUR`), and **the tick text states the real values
+rather than asserting the defaults.** The agent uses cadence to judge how much restraint is right —
+being woken every 15 minutes calls for far more silence than being woken twice a day — so a
+hardcoded "hourly" would misinform it the moment anyone changed a setting. Neither `SELF.md` nor
+the agent's own prompt states a period, because neither process can read the setting; only the
+supervisor can, so only the supervisor says it. The timezone resolves through tzdata, so the window
+holds across daylight saving instead of drifting an hour twice a year; an unresolvable zone
+disables the window and wakes around the clock, since a nuisance beats an agent that silently stops
+working.
 
-**Egress policy — left open by default (decided).** No forward proxy or DNS-allowlist built for
-v1, consistent with Docker's default and the "sandbox contains cost/blast-radius, not behavior"
-framing already in this plan. Worth revisiting only if the threat model later expands to a
-compromised dependency or injected web content attempting exfiltration to an unexpected host —
-not needed now since the Anthropic API, GitHub/NuGet, and Signal's own servers are the only
-external hosts currently in play, and nothing is pre-provisioned beyond that (see Opening holes).
+On a wake tick the agent should:
 
-## Package choices
+1. Consider whether anything needs doing.
+2. Think about capabilities it lacks or features worth building.
+3. **If** it hasn't built anything recently **and** budget remains, file a capability request.
+4. Otherwise do nothing and say nothing — a silent tick, logged as a heartbeat.
 
-- **`Anthropic` C# SDK (NuGet), not Semantic Kernel, for `RampantBrain`'s tool use.** Once ordinary
-  conversation needed its own curated tool set (see Architecture), a direct SDK dependency made
-  more sense than Semantic Kernel: the tool set is small and fixed (five tools total), so SK's
-  plugin-discovery/auto-function-calling machinery would be pure overhead for a loop this size.
-  Deliberately self-contained in the seed's own `.csproj` rather than centrally managed with the
-  rest of this repo — see the `ManagePackageVersionsCentrally` note on `Rampant.Seed/Rampant.Agent.csproj`;
-  the seeded copy becomes its own independent repo and can't rely on this monorepo's
-  `Directory.Packages.props` still being an ancestor directory once copied out.
-- **Git via the `git` CLI, not `LibGit2Sharp`.** Reuses the same subprocess helper already needed
-  for Claude Code rather than a second abstraction; avoids a native P/Invoke dependency inside a
-  container that's expected to be rebuildable across base-image/arch changes.
-- **Container: hand-written Dockerfile, not `dotnet publish` SDK-container support**
-  (`Microsoft.NET.Build.Containers` produces a runtime-only image by design — the opposite of
-  what's needed here).
-- **Don't Native-AOT-publish the agent** — reflection restrictions and long compile times fight
-  an evolving codebase with unpredictable future dependencies. Plain framework-dependent
-  `dotnet build`/`dotnet <dll>` is the right default.
-- Point `NUGET_PACKAGES` at the persistent volume so a container rebuild doesn't force
-  re-downloading every package the agent has pulled in.
-- **No .NET Aspire, despite Ancela's own heavy use of it.** Aspire's deployment story
-  (`aspire publish`/`deploy` → Bicep) targets Azure Container Apps specifically — irrelevant to a
-  bare-Docker Raspberry Pi. Its other value, local orchestration/dashboard for a graph of
-  interconnected services, has weak payoff on a single-container deployment that the plain
-  `docker-compose.yml` already covers. The AppHost is a dev-time
-  tool regardless — it wouldn't run in production on the Pi, so adopting it would only add an
-  extra local-dev-only layer (another .NET project, another package set) on top of the compose
-  file that's already the real deployment artifact, working against the smallest-possible
-  hand-authored footprint this plan aims for elsewhere.
+Conditions (3) are **advisory to the agent and enforced by the supervisor.** The agent reads
+`status.json` so it knows whether a request is worth filing; the supervisor rejects one that
+violates cooldown or budget regardless of what the agent concluded. The agent's judgment informs
+the request; it never binds the spend.
 
-**Conventions worth mirroring from Ancela** (style only — no shared code, separate repo):
-`Directory.Packages.props` central package-version management
-(`/Users/tomb/Repos/Ancela/Directory.Packages.props`); file-scoped namespaces, primary
-constructors, 4-space indentation, nullable reference types (per
-`/Users/tomb/Repos/Ancela/AGENTS.md`); the generic-host `IHostApplicationBuilder` DI style seen in
-`/Users/tomb/Repos/Ancela/Ancela.Agent/DependencyModule.cs`, reusable for the supervisor's own
-composition root if it wants DI at all. If Shape B is ever pursued later, the pattern to mirror
-is `/Users/tomb/Repos/Ancela/Ancela.Agent/SemanticKernel/KernelFactory.cs` (fresh `Kernel` per
-call from DI-registered plugin singletons via `KernelPluginCollection`/`AddFromObject`).
+Reflection is cheap and building is expensive, and at real prices the gap is wider than it sounds.
+A tick is ~2,330 input tokens and ~300 out on `gpt-5.6-luna` — about **$0.00083**, so 17 ticks a day
+is **~$0.42/month**. A single Claude Code build was **$0.37**. One build costs about as much as a
+year of hourly thinking, which is why all the metering machinery sits on that side.
 
-## Guardrails (operational, not behavioral)
+**The OpenAI side is metered by nothing, and nothing in this design can meter it.** Those calls
+happen inside the agent process — the half that rewrites itself — so any counter there is a default,
+not a bound (principle 4). The only real limit is the cap on the OpenAI project, which is why
+`.env.example` carries the arithmetic per interval: against a $5/month cap, hourly has ~12×
+headroom, 15 minutes ~3×, and 5 minutes (~$5.08/month) none at all.
 
-- Separate Anthropic API key, provider-side hard spend cap/alert.
-- **Per-cycle caps on the `claude -p` invocation itself**: `--max-budget-usd` (stop before a
-  single cycle burns an outsized amount) and `--max-turns` (bound one cycle's own agentic loop
-  length) — catches a runaway single cycle immediately, rather than only after it's already
-  contributed to tripping the account-level alert above.
-- Any future capability the agent asks for gets its own dedicated credential and its own
-  cost/usage guardrail at provisioning time — see Opening holes for the recipe. Nothing is
-  provisioned ahead of an actual ask, so there's nothing sitting around needing a cap right now.
-- Signal: no spend cap needed (free) — the guardrail here is a dedicated phone number, never the
-  owner's own Signal account, and registration data confined to the sidecar's own volume.
-- Container resource limits (`--memory`, `--cpus`).
-- External kill switch — `docker stop`/scale-to-zero, working regardless of in-flight state; tune
-  the SIGTERM grace period so a stop mid-`git commit` doesn't corrupt the repo.
-- Disk housekeeping: `build/` keeps only `current`+`previous` (git history covers the rest;
-  source can always be rebuilt on demand); supervisor periodically *reports* (doesn't enforce)
-  disk usage into the log.
+## Spend control
 
-## Deployment workflow: laptop → GitHub → Pi
+All of it in the supervisor, in code the agent cannot rewrite. Settings live in `.env` on the
+host — read by compose at `up` time, outside the volume entirely, so they are not even files the
+agent could reach.
 
-This is the workflow for **human-authored changes** to the supervisor/Dockerfile (the `rampant`
-repo) — a genuinely rare event compared to the agent's own self-modification, which is a
-completely separate mechanism (its own repo, lives only on the Pi's persistent volume, never
-touches GitHub, takes effect automatically via the supervisor's git-HEAD-diff detection with no
-human step at all). Don't conflate the two.
+| Knob | Default | Env var |
+|---|---|---|
+| Daily budget | **$5.00** | `RAMPANT_DAILY_BUDGET_USD` |
+| Per-invocation cap | **$1.00** | `RAMPANT_MAX_BUDGET_USD` |
+| Cooldown between builds | **45 min** | `RAMPANT_BUILD_COOLDOWN_MINUTES` |
+| Turn limit per run | 40 | `RAMPANT_MAX_TURNS` |
+| Wall-clock limit per run | 10 min | `RAMPANT_CLAUDE_TIMEOUT_MINUTES` |
 
-**One-time Pi setup:**
-1. Install Docker + the Compose plugin on 64-bit Raspberry Pi OS.
-2. **Raspberry Pi OS-specific gotcha:** the memory cgroup controller is disabled by default on
-   stock Raspberry Pi OS, so Docker's `--memory` limit (a Guardrails item above) silently fails to
-   enforce without it. Add `cgroup_enable=memory cgroup_memory=1` to `/boot/firmware/cmdline.txt`
-   (or `/boot/cmdline.txt` on older OS versions) and reboot *before* relying on the container
-   memory limit — otherwise the limit looks configured but does nothing.
-3. `git clone https://github.com/tombly/rampant.git` on the Pi.
-4. Create `.env` on the Pi (gitignored, never committed) with `ANTHROPIC_API_KEY` (create the key
-   and set its spend cap/alert at console.anthropic.com **before** this step, per Guardrails) and
-   any other secrets.
-5. `docker compose up -d --build` — builds the supervisor image natively for the Pi's arm64 and
-   starts it. `SeedBootstrap` seeds the empty `/workspace` volume on first boot.
+With hourly wakeups, a 45-minute cooldown means at most one build per wake tick, so a runaway
+costs at most ~$5 before it stops. A typical day should be 0–2 builds.
 
-**Ongoing infra-update loop:**
-1. Edit locally on the laptop.
-2. Verify locally with `docker compose up --build` against the same compose file. This dev
-   machine is Apple Silicon (arm64) — the same platform the official `mcr.microsoft.com/dotnet/sdk:10.0`
-   image resolves to on the Pi — so a clean local build here is architecturally identical to what
-   the Pi will run, not just "works on a different architecture and hope."
-3. Commit, push to GitHub.
-4. On the Pi, over SSH: `git pull`, then `docker compose up -d --build`. The image is rebuilt **on
-   the Pi itself**, so it's correct for the Pi's architecture regardless of what machine the
-   change was authored on — no reliance on the laptop happening to match. The old container is
-   replaced; `/workspace` (the persistent volume — the agent's own repo, memory, inbox/outbox) is
-   untouched, since it lives on the volume, not in the image.
-5. Wrap step 4 in a small `deploy.sh` on the Pi (`git pull && docker compose up -d --build`) so the
-   whole update is one SSH-able command rather than several manual steps each time.
+- **On disk**, keyed by UTC date, read before and incremented after each Claude Code invocation.
+  On disk specifically because the supervisor restarts the agent on every self-edit — an in-memory
+  counter resets exactly when it needed to hold.
+- **Cooldown persists across the date rollover**, or a build at 23:59 followed by one at 00:01
+  would skip it entirely.
+- **Per-invocation cap** via `--max-budget-usd`, in supervisor-owned argv so it can't be dropped.
+- **Fail closed** — a ledger that can't be read or written stops the build. No try/catch that
+  quietly resets the day's spend to zero.
+- **Cost capture** — Claude Code runs with `--output-format json` so real spend is recorded rather
+  than invocations counted. A cheap build shouldn't consume the same budget as an expensive one.
+  A timeout or an unparseable result is charged the full cap, because under-counting spend is the
+  more dangerous direction to guess.
 
-**Why build on the Pi rather than distribute a prebuilt image:** GitHub is a source host, not an
-image registry. Transferring a prebuilt image would mean either committing image tarballs to git
-(bloats the repo, no real versioning) or standing up a separate registry (e.g. GHCR) with a
-`docker buildx`/CI pipeline to push to it — real infrastructure for an event (human-authored infra
-changes) that should be rare. Building from source directly on the Pi needs nothing beyond Docker
-itself already being there.
+The obvious runaway loop — build → restart → wake → build — is structurally broken
+here: the loop requires the supervisor's cooperation at every step, and the supervisor is metering
+it.
 
-*(Noted as a future refinement, not needed now: if Pi build times for infra changes ever become a
-real pain point, add a GHCR-based multi-arch build via GitHub Actions and have the Pi `docker
-pull` instead of `--build`.)*
+**Recommended additionally, outside the container entirely:** a dedicated Anthropic API key with a
+monthly cap. It is the only control in this document that no code change of any kind can defeat.
 
-## Interacting with Rampant without SSH
+## What a tool is allowed to do — currently, everything
 
-**Primary mechanism: Signal**, described above (Opening holes) — an ordinary chat conversation
-with Rampant's own dedicated Signal number, event-driven pickup via the `signal-cli` sidecar's
-JSON-RPC connection, and the Pi only ever making outbound connections to do it. This superseded an
-earlier Azure Storage Queue mailbox design (built, tested, and later torn down once Signal made it
-redundant — see Opening holes for why). No inbound anything on the home gateway, no VPN/tunnel
-needed for ordinary interaction.
+The path policy governs **where code lives, not what it does.** A file in `Tools/` deploys with no
+approval and then runs inside the agent process with its full ambient authority. A tool is
+arbitrary code; nothing here constrains its behaviour.
 
-Considered and explicitly declined: Twilio's WhatsApp Business API. WhatsApp production sending
-requires Meta Business Verification, which is built around registered-business documentation
-(business registration, tax ID, and address all matching on official paperwork) — genuinely
-difficult for a personal project with no registered entity behind it, and Twilio's own free
-Sandbox mode expires every 3 days and isn't meant for production traffic. Signal has no such
-business-verification gate at all — it's just an ordinary personal account, which is exactly the
-right fit here.
+This design bounds *spend* and protects the *core*. It says nothing about resource consumption, and those
+are orthogonal axes.
 
-**Tailscale is optional, not required** — worth having anyway for occasional ops access (checking
-logs, restarting the container, running the infra-update `deploy.sh` over SSH per the Deployment
-workflow section above), but it's no longer load-bearing for ordinary interaction, since Signal
-already solves that with zero inbound network activity on the Pi.
+Before 2026-08-01 `docker-compose.yml` set no limits at all — no `deploy.resources`, no `cpus`,
+no `mem_limit`, no `networks` block. So a self-built tool had:
 
-## Phased build-out
+- All four Pi cores, and all system memory
+- Unbounded disk on the USB SSD
+- Unrestricted egress — including the **home LAN** (`192.168.1.x`), not just the internet, since
+  the container sits on the default bridge
 
-1. **Infra skeleton, no intelligence.** Dockerfile + supervisor that seeds an empty volume with a
-   "hello world" genesis agent, builds it, starts/stops/restarts it, detects crashes with
-   last-known-good fallback, and detects a new git HEAD and rebuilds.
-2. **Minimal real loop, no Claude Code yet.** Seed agent reads inbox, reads recent memory/log,
-   writes a heartbeat to outbox, sleeps, repeats — proves the file-based plumbing and supervisor
-   lifecycle before spending anything on LLM calls.
-3. **Wire in the Claude Code subprocess.** Build the timeout/capture/kill-tree subprocess helper,
-   assemble one real chat-style prompt per cycle (inbox + outbox history + memory + `SELF.md`),
-   invoke with `cwd=/workspace/agent`, capture the transcript, commit. First real test: an
-   ordinary mundane message with no engineering framing at all — e.g. "Remember today is my
-   birthday" — against a seed that has no persistence mechanism yet. Confirms the full target
-   interaction end-to-end: the reply acknowledges the gap, the session extends the agent's own
-   source to add some form of persistence, the raw fact is captured immediately (not lost
-   pending rebuild), the supervisor detects the new HEAD and rebuilds/restarts, and a later
-   ordinary message exercises the new capability. **This is also where the non-interactive
-   permission-mode seam gets validated for real.**
+**Pi-hole runs on the same box and serves household DNS.** An ordinary bug in an auto-deployed
+tool — an infinite loop, a leak — takes DNS down for the whole house. This risk class is different
+from the others in this document: it needs no adversarial assumption, and its blast radius reaches
+people who never agreed to the experiment. API spend shows up on a bill; this shows up as the
+internet not working.
 
-   **Revised after this phase shipped and saw real use:** every message going through Claude Code
-   turned out to be the wrong default (see "Architecture: `RampantBrain` vs. Claude Code" above) —
-   ordinary conversation now goes through a direct API call with a curated tool set, and Claude
-   Code is demoted to the `extend_self` tool, invoked only when a message actually needs it. The
-   target end-to-end behavior described in this phase is unchanged; only *which* mechanism realizes
-   it on any given message changed.
-4. **Real open-ended self-modification test.** Let ordinary owner messages arrive over an
-   extended, unattended period with no explicit engineering directives at all, observing via
-   outbox/logs what capabilities it decides on its own it needs and builds — including at least
-   one build-failure-and-recovery cycle to prove the safety net holds under real conditions.
-5. **Guardrail hardening.** Spend cap live for real, resource limits set, log rotation/build
-   pruning, confirm the kill switch works cleanly mid-cycle.
-6. **Everything past this point is the agent's own business** — no further design needed now;
-   the point of phases 1–5 is precisely to let this be genuinely emergent from here.
+Mitigations are host-side and therefore real bounds under principle 4. **Done** (`docker-compose.yml`,
+2026-08-01), sized for the Pi's 4 cores / 8GB so the host and Pi-hole keep a core and ~5GB even
+with the container at its ceiling:
 
-## Risks / gaps specific to the C# translation
+- `cpus: 3.0`, `mem_limit: 3g` — hard ceiling, protects Pi-hole.
+- `pids_limit: 512` — caps runaway forking.
+- `cap_drop: [ALL]` plus only `CHOWN, FOWNER, SETUID, SETGID, DAC_OVERRIDE, KILL`, and
+  `security_opt: [no-new-privileges]`. See the Architecture note on why the supervisor needs each.
 
-- **Build time >> JS require-time** — every cycle costs a real compile, throttling iteration
-  cadence; this cost grows with whatever the agent itself chooses to build.
-- **NuGet restore friction** — adding a dependency needs a `.csproj` edit + network-hitting
-  `dotnet restore`, so the container needs outbound network access to nuget.org at *runtime*, not
-  just image-build time (separate egress consideration from the Anthropic API calls). Expect
-  build-failure clusters specifically around "the agent tried to add a library."
-- **Claude Code CLI version drift** — pin explicitly, treat upgrades as a deliberate re-validated
-  image change.
-- **Headless permission-prompt seam** — the top functional risk; if non-interactive mode isn't
-  configured correctly, the first file edit/bash call deadlocks the subprocess until timeout.
-- **Process-tree cleanup** — always kill the entire tree on timeout, not just the top-level PID.
-- **Concurrent/overlapping cycles** — prevented by construction as long as the loop stays
-  strictly sequential (await full cycle + commit before starting the next).
-- **Git identity bootstrap** — bake a default `user.name`/`user.email` into the image/seed step
-  or the very first commit fails.
+Still open: an egress allow-list, if LAN reach should be constrained — noting `api.openai.com` must
+stay open regardless, and that is the expensive door anyway.
 
-## Verification
+Deliberately *not* proposed: constraining what a tool may do semantically. That would mean
+reviewing every tool, which defeats the point. The bound is on resources, not intent.
 
-- **Phase 1:** Hand-edit a `.cs` file in `/workspace/agent` from outside the container, confirm
-  supervisor detects the new HEAD, rebuilds, and restarts into it. Then deliberately introduce a
-  compile error and confirm the previous binary keeps running unaffected while the failure is
-  logged. Whenever a future capability gets provisioned (see Opening holes), confirm the same
-  isolation property every hole so far has had: the agent container can reach its own dedicated
-  credential/resource, and has no route/credential to any of Ancela's real resources at all.
-- **Phase 2:** Confirm the heartbeat loop runs continuously across multiple cycles and that a
-  file dropped in `/workspace/inbox` is picked up on the next cycle.
-- **Phase 3:** Send the ordinary message "Remember today is my birthday" against a seed with no
-  persistence mechanism yet, and confirm the full target interaction — reply acknowledges the
-  capability gap → self-extension → the raw fact captured immediately → commit → HEAD-diff
-  detected → rebuild → restart → a later ordinary message retrieves the fact — completes with no
-  manual intervention and no engineering framing from the owner. Also confirms the Claude Code
-  subprocess doesn't hang (validates the non-interactive permission mode).
-- **Phase 4:** Let an open-ended goal run unattended for a stretch; separately stage a deliberate
-  build failure to confirm the recovery path holds under realistic conditions, not just the
-  synthetic Phase 1 check.
-- **Phase 5:** Confirm `docker stop` mid-cycle (including mid-`git commit`) doesn't corrupt the
-  agent's repo; confirm container resource limits are actually enforced (e.g. trigger high
-  memory use and observe the limit); confirm the spend-cap alert fires in a controlled test.
+## Reference implementations
+
+### Ancela (`~/Repos/Ancela`) — still worth reading, but no longer the structural model
+
+A mature agent by the same author, 13 plugins, running `gpt-5.6-luna`. It was named here as the
+shape to copy back when this was going to be built on Semantic Kernel. That decision changed during
+implementation (see "The mutable surface"), so the SK-specific parts — `KernelFactory.cs`, the
+`[KernelFunction]` plugin shape — are no longer the target format. What remains valuable is the
+*reasoning* in two files:
+
+- **`Ancela.Agent/SemanticKernel/KernelProfilePolicy.cs`** — **read this before revisiting the
+  wakeup design.** It is a worked answer to "what should an agent be allowed to do when *it*
+  decided to act rather than the owner asking": default-deny allow-lists for the autonomous
+  profiles, with the reasoning attached — email and calendar excluded as untrusted input channels,
+  `web_fetch` excluded because it takes an attacker-controllable URL and is therefore an
+  exfiltration channel for anything injected. The insight worth stealing is that **the safe tool
+  set shrinks when nobody is watching**, and the hourly wake tick is exactly that situation.
+  Nothing currently implements this — the wake tick sees the same tools an owner message
+  does. Deliberate for now (there is one tool at genesis), but it is the obvious next thing to
+  think about once the agent has built itself anything with reach.
+- **`AutonomousToolGuardFilter.cs`** — a hard default-deny backstop behind what the model is even
+  shown. Note that in Rampant this pattern is *weaker* than in Ancela: Ancela can't rewrite itself,
+  so its filter is a real bound; Rampant's would live in `/workspace/agent` and is therefore a
+  default (principle 4). Useful for ergonomics, never for enforcement.
+- **`Plugins/{Reminder,ScheduledTask,StandingRule}*`** — scheduling machinery already built and
+  running, including persistence and restart-survival. Worth reading if Rampant asks for reminders
+  and you want to judge what it produces.
+
+## Components
+
+All written 2026-08-01 and **running in production since**; see "Verified by running it" below for
+what each claim rests on. Results from the live run are in [FINDINGS.md](FINDINGS.md).
+
+0. ✅ **Container resource limits** — `docker-compose.yml`. Also added the signal-cli healthcheck
+   and `depends_on: condition: service_healthy`.
+1. ✅ **UID split** — `Dockerfile` + `docker-entrypoint.sh` (lays out ownership as root, execs the
+   supervisor), `AgentProcess` (spawns the agent via `setpriv` with an allowlisted environment),
+   Claude Code moved to `/root/.local/bin`. The entrypoint also removes any need for a
+   manual `sudo chown -R 1655:1655 local-workspace` after a wipe.
+2. ✅ **Supervisor: request watcher** — `RequestPipeline`, `AgentRequest`, `ClaudeCodeRunner`,
+   `ExtendSelfPrompt`, `StatusWriter`.
+3. ✅ **Supervisor: path policy + approval queue** — `PathPolicy`, `ApprovalQueue`, `SignalGateway`,
+   `SignalClient`.
+4. ✅ **Supervisor: spend ledger + cooldown** — `SpendLedger`, `SupervisorConfig`.
+5. ✅ **Supervisor: hourly wake tick** — `WakeTicker`.
+6. ✅ **Agent** — `ChatClientFactory` (OpenAI via `IChatClient`), `ToolLoader` (reflection over
+   `Tools/`), `AgentBrain`, `AgentLoop`, `Inbox`/`Outbox`, `CapabilityTools`.
+7. ✅ **Agent: `SELF.md`**, plus `Tools/README.md` stating the tool contract.
+
+Also updated: `Rampant.Cli`'s `log` command, which reads the current file layout and surfaces
+request outcomes from `requests/out/`.
+
+## Verified by running it
+
+Every runtime assumption listed here as untested when the design was written has since been
+exercised on the real hardware. Recorded because the reasoning behind each was written *before*
+anything ran, and it is worth knowing which parts survived contact.
+
+- ✅ **`setpriv` exists in `mcr.microsoft.com/dotnet/sdk:10.0`** and accepts these flags — the agent
+  starts under uid 1655 on every deploy.
+- ✅ **The capability set is sufficient.** `CHOWN`/`SETUID`/`SETGID`/`KILL`/`DAC_OVERRIDE` were
+  reasoned about rather than observed; all three failure modes predicted for a missing one (entrypoint
+  chown, agent start, SIGTERM) work, the last confirmed by clean stop/start pairs around self-edits.
+- ✅ **The signal-cli healthcheck** — `bash` and `/dev/tcp` in `eclipse-temurin:25-jre`. Observed
+  going `Waiting` → `Healthy` before the supervisor starts, which is what the gate depends on.
+- ✅ **`OPENAI_API_KEY`** is set on the host. Nothing can think without it.
+- ✅ **A full round trip**: text it something it can't do → request filed → Claude Code builds a tool
+  → build gate → deploy → restart → successor answers the original ask. Now the routine path; ten
+  capabilities have deployed this way.
+- ✅ **The approval path**: core change → prompt with token → reply → deploy. Both branches
+  exercised, deny→rollback and approve→deploy. It found two defects in its own reporting while being
+  tested, both since fixed.
+
+**Not verified, and structurally cannot be here:** that a self-built tool behaves well. The gate
+governs where code lives, not what it does — see "What a tool is allowed to do".
+
+## Open questions
+
+- ~~**Approval reply parsing over Signal.**~~ Resolved: four-hex-character token, and at most one
+  approval outstanding at a time, so bare yes/no is unambiguous. A mismatched token is rejected.
+- ~~**What a wake tick looks like to the model.**~~ Resolved: a distinct envelope kind, framed in
+  the system prompt as "nobody sent this and nobody is waiting", with `(nothing)` as an explicit
+  silence marker the loop suppresses. Whether the model actually stays quiet most hours is one of
+  the first things to watch.
+- **Whether the agent should see rejected requests' reasons.** Currently yes, in all cases —
+  cooldown, budget, and "an approval is outstanding" all come back as text the agent passes on.
+  Revisit if it turns out to prompt nagging.
+- **Which capability requests deserve more scrutiny than the rest.** The standing policy is to open
+  exactly the window asked for, but the windows are not equal. **An email address is the one to
+  think hard about**: it sounds mundane ("let me email you summaries") while being the single
+  largest expansion of what the agent can sign up for autonomously — most third-party verification
+  walls are email walls. Worth recognising in advance rather than in the moment.
+- ~~**SK package pinning.**~~ Dissolved twice over: central package management was removed from the
+  repo (2026-08-01) because it managed exactly one version for exactly one consumer while the seed
+  had to opt out anyway, and SK is no longer used at all. The seed pins
+  `Microsoft.Extensions.AI` / `.OpenAI` at 10.8.3 inline, which is now the house style rather than
+  an exception. The failure this guards against — a missing version surfacing as a container-only
+  `NU1015` that builds fine on a laptop — is still worth remembering whenever a package is added,
+  including by Claude Code. Now enforced rather than merely asked for: `PackagePinPolicy` rejects a
+  missing version along with floating ones, so the NU1015 case fails with a readable reason instead
+  of as a container-only build error.

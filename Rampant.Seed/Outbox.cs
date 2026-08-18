@@ -7,9 +7,9 @@ namespace Rampant.Agent;
 /// How this process speaks - by writing a file. The supervisor watches this directory and sends
 /// what it finds over Signal.
 ///
-/// It is a file drop rather than a socket for a reason worth understanding before changing it. In
-/// V1 the agent held the Signal connection itself, and a self-edit that broke it cost the agent
-/// its only reply path; recovery was wiping the machine, because there was no longer any way to
+/// It is a file drop rather than a socket for a reason worth understanding before changing it. An
+/// agent holding the Signal connection itself can lose its only reply path to a bad self-edit -
+/// which has happened, and recovery was wiping the machine, because there was no longer any way to
 /// send it the instruction to fix itself. Writing a file is something no self-edit and no
 /// self-built tool can take away.
 ///

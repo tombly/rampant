@@ -63,8 +63,8 @@ public sealed class AgentBrain(IChatClient _chat)
         sb.AppendLine();
 
         // Computed once, here, rather than looked up mid-turn. The model otherwise reaches for
-        // whatever tool it has and guesses; in V1 it searched the web for "current time" and was
-        // about a day out, because search results are cached page snapshots rather than a clock.
+        // whatever tool it has and guesses - searching the web for "current time" has landed about
+        // a day out, because search results are cached page snapshots rather than a clock.
         sb.AppendLine($"Current date/time: {DateTimeOffset.UtcNow:R} (UTC)");
         sb.AppendLine($"Tools available to you right now: {toolCount}");
         sb.AppendLine();

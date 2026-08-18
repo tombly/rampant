@@ -9,9 +9,9 @@ public sealed record GitResult(int ExitCode, string Stdout, string Stderr)
 }
 
 /// <summary>
-/// Thin git wrapper for the agent repo. Only the supervisor calls this - under V2 the agent has no
-/// write access to /workspace/agent at all, so unlike V1 there is exactly one process that ever
-/// commits, and no need to reason about concurrent writers.
+/// Thin git wrapper for the agent repo. Only the supervisor calls this - the agent has no write
+/// access to /workspace/agent at all, so there is exactly one process that ever commits, and no
+/// need to reason about concurrent writers.
 /// </summary>
 public static class Git
 {

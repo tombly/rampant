@@ -13,9 +13,9 @@ public interface IClaudeCodeRunner
 
 /// <summary>
 /// The only thing in the system that invokes Claude Code - its argv, its API key, its user, its
-/// budget flags. In V1 this lived in the agent's own repo, which meant every guardrail on it
-/// (--max-turns, --max-budget-usd, the model) was a line the agent could rewrite. Moving it here
-/// is most of what "the supervisor holds the purse strings" actually means.
+/// budget flags. Living in the agent's own repo would make every guardrail on it (--max-turns,
+/// --max-budget-usd, the model) a line the agent could rewrite. Keeping it here is most of what
+/// "the supervisor holds the purse strings" actually means.
 ///
 /// Runs as root. The agent runs as agentrunner and holds no ANTHROPIC_API_KEY - it cannot read
 /// root's /proc/1/environ, so the credential split is enforced by the kernel rather than by
@@ -30,7 +30,7 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
         // As the builder uid, never as root. Two reasons that turned out to be one: Claude Code
         // refuses --dangerously-skip-permissions outright when it detects root privileges (found
         // the hard way, on the first real capability request), and as root it could have rewritten
-        // /opt/supervisor - voiding the first of PLAN-V2's four boundaries. Under its own uid it
+        // /opt/supervisor - voiding the first of PLAN.md's four boundaries. Under its own uid it
         // can write the agent's source and nothing else.
         var psi = RunAs.Command(RunAs.Builder, "claude", Workspace.AgentRepo);
         psi.RedirectStandardOutput = true;
@@ -163,8 +163,8 @@ public sealed class ClaudeCodeRunner(SupervisorConfig _config, ILogger<ClaudeCod
     /// <summary>Every invocation - the full prompt sent, and Claude Code's complete raw output - is
     /// otherwise invisible, leaving only whatever summary the model chooses to narrate. Persisting
     /// it makes each self-modification attempt inspectable after the fact, independently of the
-    /// model's own account of what it did. That distinction has already mattered once: a V1 agent
-    /// reported a fix as pre-existing seconds after committing it.
+    /// model's own account of what it did. That distinction has already mattered: an agent here
+    /// once reported a fix as pre-existing seconds after committing it.
     ///
     /// Best-effort and on CancellationToken.None: a logging failure must never affect a result that
     /// has already been computed and already cost money.</summary>

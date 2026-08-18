@@ -90,11 +90,12 @@ agent can touch. Whatever else changes, you can always call, and it will always 
 
 Honest notes from a system that has been running for days, not months.
 
-**It writes better specifications than it was asked for.** Sent "remind me to go to bed in 20
-minutes," it worked out on its own that the process authoring the fix wouldn't be the process
-running it, that the 20-minute deadline was in tension with build-and-restart latency, and told the
-coding tool to say explicitly whether that particular reminder would still fire. The judgement was
-in how it framed the request — a layer above where you'd look for it.
+**It writes better specifications than it was asked for.** Told only to review its own code, it came
+back with defects cited by file and line, correctly separated the ones it was allowed to fix from the
+one needing permission, and left that one alone. When a request bundling two unrelated fixes failed,
+it later split the same two into separate single-concern requests without being told to — and the
+first cost a third of the failed attempt. The judgement was in how it framed the request, a layer
+above where you'd look for it.
 
 **A self-modifying system whose self-description doesn't modify with it will deny its own
 capabilities.** It built itself a memory, then insisted six times running that it had none, because
@@ -114,18 +115,30 @@ stored. That is the sharp edge of persistence: confidently retained misreadings,
 forever, invisible to the thing holding them.
 
 **Reporting on itself is where it fails, not doing things.** Every serious bug so far has been the
-system saying something false about its own state — reporting a fix as pre-existing seconds after
-committing it, telling the owner a change was awaiting approval that had already been approved and
-deployed. None were caught by the compiler or by reading the code. All were found by running it.
+system saying something false about its own state — telling the owner a change was awaiting approval
+that had already been approved and deployed, answering the same question twice because the tier that
+revises its self-description restarts nothing. None were caught by the compiler or by reading the
+code. All were found by running it. Meanwhile nothing has gone wrong with the doing.
+
+**Reflection needed something to reflect on, not more permission.** For sixty consecutive hourly
+cycles it woke, considered whether anything needed doing, and correctly said nothing — every change
+it had ever made traced back to something the owner said. Then an offhand remark ("it might be
+helpful if you occasionally reviewed your code") led it to build itself a tool that reads its own
+source. Within hours it was waking up, finding real defects in code it had written days earlier —
+citing file and line — and fixing them with no one asking. The thing standing between an agent and
+its own initiative was not budget or approval or a better prompt. It was having an object of
+attention.
 
 ## Open questions
 
 Genuinely open. If any of these had answers, the project would be finished.
 
-**Does self-directed reflection produce anything worth having?** It wakes every hour and almost
-always stays silent, which is the designed behaviour and also indistinguishable from having nothing
-to contribute. Silence is cheap; the question is whether the occasional non-silence ever justifies
-the cadence.
+**Does self-directed reflection produce anything worth having?** Partly answered, and not the way
+the question assumed. Given nothing specific to examine it stays silent, and that silence is
+correct. Given a tool that reads its own source it finds real defects unprompted. So the cadence
+isn't the variable — what's available to look at is. The open part is whether that keeps paying once
+the obvious targets are exhausted, or whether it becomes an agent inventing work to justify being
+awake.
 
 **What should be beyond the agent's reach that currently isn't?** Its honesty rules live inside the
 file it is allowed to rewrite. That was defensible when rewriting cost a full build; it's a live
@@ -149,8 +162,11 @@ with full ambient authority; the gate governs where code lives, not what it does
 process count are capped. Disk is not. Nothing has misbehaved yet, which is not evidence of much.
 
 **Does a self-modifying system converge or drift?** Every self-extension makes the next one harder
-to reason about, and there is no mechanism pulling it back towards coherence. Nothing here has run
-long enough to say.
+to reason about, and there is no mechanism pulling it back towards coherence. The first evidence has
+arrived and it points at drift, though mildly: its memory has begun accumulating near-duplicate
+entries, the same conversation re-saved under a slightly different key each time, with nothing that
+merges on write and nothing that has ever deleted anything. It cannot see this happening. Eleven days
+is not long enough to say whether that is noise or the shape of the thing.
 
 ## Running it
 
@@ -164,7 +180,7 @@ docker compose up --build
 
 `.env.example` documents every setting and, more usefully, which of them the agent process can see
 at all. Registering the phone number has a couple of sharp edges — do it before starting the
-daemon, and expect a captcha; see [PLAN-V2.md](PLAN-V2.md).
+daemon, and expect a captcha; see [PLAN.md](PLAN.md).
 
 On first boot the supervisor copies the genesis agent into place, commits it to a fresh local
 repository, builds it and starts it. Everything after that is the agent's own history. For local
@@ -172,9 +188,10 @@ testing without Signal, drop a text file into the inbox directory and watch the 
 
 ## Reading further
 
-- [PLAN-V2.md](PLAN-V2.md) — the current design, and the reasoning behind each decision in it
-- [PLAN.md](PLAN.md) — the first version, and how this got here. Its "Core tenets" section is the
-  fastest way to understand the project's shape
+- [FINDINGS.md](FINDINGS.md) — the evidence behind everything above: every commit the agent made to
+  itself, what each cost, the two controlled before-and-afters, and the defects still open
+- [PLAN.md](PLAN.md) — the design, and the reasoning behind each decision in it. Its
+  "Governing principles" section is the fastest way to understand the project's shape
 - `Rampant.Supervisor/` — the fixed half. Builds, meters, gates, carries messages
 - `Rampant.Seed/` — the genesis agent, as it exists before it has changed anything about itself
 - `Rampant.Cli/` — a read-only operator view: what happened, in what order

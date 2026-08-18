@@ -1,12 +1,12 @@
 #!/bin/sh
 set -e
 
-# Lays out /workspace so the ownership in PLAN-V2.md -> "Filesystem layout" actually holds, then
+# Lays out /workspace so the ownership in PLAN.md -> "Filesystem layout" actually holds, then
 # hands off to the supervisor. Runs as root every boot, and is idempotent.
 #
-# This also permanently fixes a V1 deploy gotcha: `docker compose up` auto-creates a missing
-# bind-mount source as root:root, so every full wipe of local-workspace needed a manual
-# `sudo chown -R 1655:1655 local-workspace` or the agent crash-looped on UnauthorizedAccessException
+# This also fixes a deploy gotcha: `docker compose up` auto-creates a missing bind-mount source as
+# root:root, so without this a full wipe of local-workspace needs a manual
+# `sudo chown -R 1655:1655 local-workspace` or the agent crash-loops on UnauthorizedAccessException
 # forever. Doing it here means a wipe is just a wipe.
 
 AGENT_UID=1655

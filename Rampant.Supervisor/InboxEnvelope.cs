@@ -25,9 +25,9 @@ public enum InboxKind
 /// passed the sender allowlist before it exists as a file, and approval replies never appear here
 /// at all.
 ///
-/// That placement is a change from V1, where the agent held the socket and did its own allowlist
-/// check. Moving it makes access control structural rather than a default the agent could rewrite
-/// (tenet 5), and it means the owner's yes/no on a core change cannot be forged by the process the
+/// That placement is deliberate: an agent holding the socket would do its own allowlist check.
+/// Keeping it here makes access control structural rather than a default the agent could rewrite
+/// (principle 5), and it means the owner's yes/no on a core change cannot be forged by the process the
 /// change is being made to.
 /// </summary>
 public sealed record InboxEnvelope(

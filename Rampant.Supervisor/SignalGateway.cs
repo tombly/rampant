@@ -11,12 +11,12 @@ namespace Rampant.Supervisor;
 /// the stream, and write whatever is left into /workspace/inbox as an envelope. Outbound: watch
 /// /workspace/outbox and send what the agent put there.
 ///
-/// This is the V2 answer to a V1 failure. The agent used to hold the socket and do its own
-/// allowlist check, which meant (a) access control was a default the agent could rewrite, and it
-/// twice reinvented it differently and once incompletely on a fresh genesis, and (b) a bad
-/// self-edit could cost the agent its only reply path, as one actually did - recovery was a wipe,
-/// because it could no longer receive the instruction to fix itself. Here the agent speaks by
-/// writing a file, which no self-edit and no self-built tool can take away from it.
+/// This placement answers a failure the project has actually had. An agent holding the socket and
+/// doing its own allowlist check means (a) access control is a default the agent can rewrite - left
+/// to emergence it was reinvented twice, differently each time and once incompletely - and (b) a
+/// bad self-edit can cost the agent its only reply path, as one did, with a wipe as the only
+/// recovery because it could no longer receive the instruction to fix itself. Here the agent speaks
+/// by writing a file, which no self-edit and no self-built tool can take away from it.
 /// </summary>
 public sealed class SignalGateway(
     SignalClient _signal,
@@ -72,8 +72,8 @@ public sealed class SignalGateway(
         catch (Exception ex)
         {
             // Best-effort: a notification failure must never take down the supervisor. It is
-            // logged rather than swallowed, though - V1 discarded the error and the alert channel
-            // was consequently never confirmed to deliver anything at all.
+            // logged rather than swallowed, though - discarding the error leaves the alert channel
+            // never confirmed to deliver anything at all, which was once the case here.
             _logger.LogError(ex, "Failed to send supervisor notification to owner");
         }
     }

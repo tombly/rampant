@@ -9,8 +9,8 @@ namespace Rampant.Cli;
 /// in a container. `docker compose up --build` does not rebuild it and `git pull` does not replace
 /// it, so a change to Rampant.Cli/ leaves a stale binary running with nothing to say so.
 ///
-/// That is not theoretical. V2 changed the workspace layout and every log format, and the stale
-/// binary kept running against V1's - so `rampant log` printed nothing at all and exited 0. A
+/// That is not theoretical. A rewrite changed the workspace layout and every log format while the
+/// stale binary kept parsing the old ones - so `rampant log` printed nothing at all and exited 0. A
 /// wrong answer that looks like "there is nothing to report" is worse than a crash, and it went
 /// unnoticed until somebody thought to ask whether the tool still worked.
 ///

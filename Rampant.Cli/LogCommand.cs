@@ -40,7 +40,7 @@ public static class LogCommand
 
     private static IEnumerable<LogEvent> ReadHistoryLog(string workspaceRoot)
     {
-        // Under logs/, not memory/ - V2's agent has no memory directory at all, and this was never
+        // Under logs/, not memory/ - the agent has no memory directory at all, and this was never
         // memory in the first place: it is an operator log the agent has no way to read back.
         var path = Path.Combine(workspaceRoot, "logs", "history.log");
         if (!File.Exists(path))

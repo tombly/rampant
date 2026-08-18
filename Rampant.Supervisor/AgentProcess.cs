@@ -96,8 +96,8 @@ public sealed class AgentProcess(ILogger<AgentProcess> _logger) : IAgentProcess
         // System.Diagnostics.Process has no portable "send SIGTERM" (Process.Kill sends SIGKILL on
         // Unix), so shell out to `kill`. Root needs CAP_KILL to signal a process under a different
         // uid - see docker-compose.yml. The grace period only means anything if the agent is given
-        // a signal it can handle: V1 documented a grace period it never actually granted, and a
-        // self-triggered restart killed the very cycle that had requested it.
+        // a signal it can handle. A grace period that is documented but never actually granted
+        // lets a self-triggered restart kill the very cycle that requested it, which has happened.
         try
         {
             using var kill = Process.Start(new ProcessStartInfo("kill")

@@ -12,7 +12,7 @@ services:
       # condition: service_healthy, not the bare list form. Without it compose waits only for the
       # sidecar *container* to start, not for its JVM to bind 7583 - so the supervisor's first
       # outbound alert reliably hit ECONNREFUSED and was swallowed, making anything that went
-      # wrong in the first seconds after `up` unreportable. See PLAN-V2.md -> "V1 lessons".
+      # wrong in the first seconds after `up` unreportable.
       signal-cli:
         condition: service_healthy
     restart: unless-stopped
@@ -20,7 +20,7 @@ services:
 
     # Resource ceiling. This is not about the agent misbehaving - it's about an ordinary bug in an
     # auto-deployed self-built tool (infinite loop, leak, runaway fork) taking down Pi-hole, which
-    # shares this box and serves household DNS. See PLAN-V2.md -> "What a tool is allowed to do".
+    # shares this box and serves household DNS. See PLAN.md -> "What a tool is allowed to do".
     # The Pi here has 4 cores / 8GB, so this leaves a core and ~5GB for the host and Pi-hole even
     # with the container at its ceiling. Raise only if `dotnet build` starts getting OOM-killed.
     cpus: 3.0
@@ -51,7 +51,7 @@ services:
       - .env
     volumes:
       # Registration data (identity keys) - must persist, or a rebuild forces re-registering the
-      # phone number from scratch. See PLAN.md -> "Opening holes" -> Signal.
+      # phone number from scratch. See PLAN.md -> "Governing principles".
       - signal-cli-data:/root/.local/share/signal-cli
     restart: unless-stopped
     # Not published to the host - reachable by the rampant container only, over the internal

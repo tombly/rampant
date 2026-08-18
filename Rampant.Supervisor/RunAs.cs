@@ -18,7 +18,7 @@ namespace Rampant.Supervisor;
 /// The builder uid exists for two reasons that turned out to be the same reason. Claude Code
 /// refuses --dangerously-skip-permissions outright when it detects root, which is how this was
 /// found; and running it as root would have let it rewrite /opt/supervisor, quietly voiding the
-/// first of the four boundaries in PLAN-V2.md. Under a uid of its own it can write the agent's
+/// first of the four boundaries in PLAN.md. Under a uid of its own it can write the agent's
 /// source and nothing else.
 ///
 /// setpriv rather than su: it is not setuid (so no-new-privileges does not block it) and it execs

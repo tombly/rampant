@@ -10,7 +10,7 @@ namespace Rampant.Supervisor;
 ///
 /// It deliberately does not depend on the agent's code cooperating - no "please restart" marker
 /// file, no handshake. A broken self-edit has to stay recoverable even when the agent is
-/// crash-looping or cannot run at all, which under V2 also means the owner can still reach it:
+/// crash-looping or cannot run at all, which also means the owner can still reach it:
 /// the Signal channel belongs to this process, not to the one being edited.
 /// </summary>
 public sealed class ProcessSupervisor(
@@ -68,10 +68,10 @@ public sealed class ProcessSupervisor(
     }
 
     /// <summary>
-    /// The explicit "start for the first time" path V1 never had. There, a boot with nothing new to
-    /// build fell through to the crash-recovery branch - the only path that started the agent at
-    /// all - so every ordinary restart logged a crash, alerted the owner, and ate a pointless
-    /// backoff. Here a cold start is its own case, and the crash branch below means what it says.
+    /// An explicit "start for the first time" path. Without one, a boot with nothing new to build
+    /// falls through to the crash-recovery branch - the only path that starts the agent at all - so
+    /// every ordinary restart logs a crash, alerts the owner, and eats a pointless backoff. Here a
+    /// cold start is its own case, and the crash branch below means what it says.
     /// </summary>
     private async Task<SupervisorState> ColdStartAsync(SupervisorState state, CancellationToken ct)
     {

@@ -19,7 +19,7 @@ namespace Rampant.Supervisor;
 ///
 /// Enforced here, in supervisor code baked into a root-owned /opt, rather than only in the prompt
 /// that asks Claude Code to pin - a rule expressed inside /workspace/agent is a default, not a
-/// bound (PLAN.md -> tenet 4).
+/// bound (PLAN.md -> principle 4).
 /// </summary>
 public static class PackagePinPolicy
 {
