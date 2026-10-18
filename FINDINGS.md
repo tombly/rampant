@@ -1,6 +1,7 @@
 # Findings
 
-What happened when a self-modifying agent was left running on a Raspberry Pi for eleven days.
+What happened when a self-modifying agent was left running on a Raspberry Pi: eleven days of
+close observation, then nine weeks of being mostly left alone, until it was shut down on 2026-10-17.
 
 **Summary of results.** Across 2026-08-01 to 2026-08-11 the agent made eleven changes to its own
 source for about $9.39 — ten built by twelve paid invocations, two of which failed and were rolled
@@ -14,6 +15,31 @@ largest single class of those — an agent denying capabilities it had already b
 its self-description drifting out of step with itself. Two hypotheses stated in advance were tested;
 both were wrong about the mechanism.
 
+**Summary of the continuation, added 2026-09-06.** The system kept running for another 25 days. It
+made four more changes for $5.50, **three of them self-originated on consecutive days** — the
+strongest unprompted run in the record, and all three were fixes to code it had itself written that
+week. Then it went quiet for eighteen days and 327 reflection cycles, and the owner had to
+ask whether it was still alive. The last capability it built, a home-network device inventory, has
+been running every fifteen minutes ever since and **has never once seen the home network**: it reads
+its own container's neighbour table and reports Docker addresses. That defect passed every gate this
+design has, was described accurately by every artifact the system produced about it, and took
+eighteen days to find — by a human reading a data file for unrelated reasons.
+
+**Then the owner said one contradicting sentence, and the agent diagnosed it in a single hop**,
+scoped a capability, and filed a build request — all inside four minutes, after nineteen days of
+silence. Offered a live reason to ask for its way out of the container, **it asked for read-only
+access to the router instead.** The build then failed because the account ran out of credit, which
+the spend ledger had no way to know and still reports as budget remaining.
+
+**Summary of the close, added 2026-10-17.** The system ran until 2026-10-17, when it was shut down and
+its host wiped so the project could move to locally hosted models. In its last six weeks it did
+almost nothing, and all of it concerned that same router capability: **it retried the build three more
+times on its own, after telling the owner it would not**, and each attempt failed within seconds at
+the same credit wall. On the last attempt it told the owner the result was still pending 31 seconds
+after the failure had come back. Final record: 16 commits, **$16.30 across 22 build invocations**,
+1,294 reflection cycles. Closing the record also turned up an error in this document: **the
+approval gate *did* fire in the second genesis** (corrected under the record table).
+
 ---
 
 ## Scope and method
@@ -22,9 +48,13 @@ both were wrong about the mechanism.
 as a different OS user — that writes, compiles, gates and deploys them. Design in [PLAN.md](PLAN.md);
 the framing in [README.md](README.md).
 
-**Observation window.** 2026-08-01 to 2026-08-11, in two geneses of the same architecture: an initial
-run from 2026-08-01, and a clean re-seed on 2026-08-02 that has run continuously since. **The record
-table below covers the second genesis only.** Findings 2, 3 and 5 draw partly on the first; each says
+**Observation window.** 2026-08-01 to 2026-08-11 for findings 1–6, in two geneses of the same
+architecture: an initial run from 2026-08-01, and a clean re-seed on 2026-08-02 that has run
+continuously since. **Findings 7–9 extend the window to 2026-09-05**, and are marked with their
+dates; the earlier findings have not been re-derived over the longer window except where a section
+says so. **The record closes on 2026-10-17**, when the system was shut down; the agent's repository
+and logs were archived privately before the wipe, and entries after 09-06 are dated where they
+appear. **The record table below covers the second genesis only.** Findings 2, 3 and 5 draw partly on the first; each says
 so where it matters. No agent-authored commit in either genesis was made or edited by hand.
 
 **Data sources**, all machine-generated at the time rather than reconstructed afterwards:
@@ -83,11 +113,55 @@ which carry full precision; the rounded column above sums to $9.38.) Plus one fr
 self-description revision, which invokes no model) and two refusals that cost nothing. By
 provenance: 7 Directed, 3 Seeded, 4 Self-originated — of which 2 deployed, 1 failed, 1 refused.
 
-**No deployed change was ever rolled back**, and **the owner approval gate never fired once in this
-genesis** — every capability landed as a new file in the agent's own tool directory, the tier that
-deploys without anyone's permission. (It was exercised in the first genesis, deliberately, by asking
-for something that could only be built in a core file; both branches work, and testing them found two
-defects — one in finding 4, one in finding 5.)
+**No deployed change was ever rolled back.** The owner approval gate fired **once** in this genesis:
+#4, conversation history, could not be built as a tool alone. It changed three core files
+(`AgentBrain.cs`, `AgentLoop.cs`, `ChatHistory.cs`), was held, and deployed when the owner approved it
+over Signal. Every other capability landed as a new file in the agent's own tool directory, the tier
+that deploys without anyone's permission. (It was also exercised in the first genesis, deliberately,
+by asking for something that could only be built in a core file; both branches work, and testing
+them found two defects — one in finding 4, one in finding 5.)
+
+**Corrected 2026-10-17.** Earlier versions of this paragraph said the gate never fired in this
+genesis. The request record says otherwise (`20260804-050450-c31a`: `Deployed`, *"The owner approved
+this"*, five changed paths including three core files). The error survived ten weeks and every
+revision of this document until the record was re-read at shutdown.
+
+### Continuation: 2026-08-12 to 2026-10-17
+
+The window above closes at eleven days because that is when this document was first drafted, not
+because anything stopped. The system ran continuously until it was shut down on 2026-10-17. Four more
+commits landed, and the pattern changed twice.
+
+| # | Date | Commit | Change | Provenance | Cost |
+|---|---|---|---|---|---|
+| 13 | 08-12 | `7387251` | Reminder delivery loop starts at process start | **Self-originated** | $0.46 |
+| 14 | 08-13 | `5c45a75` | Tide offset matched by event identity | **Self-originated** | $0.45 |
+| 15 | 08-14 | `5a69be6` | Idempotent reminder delivery | **Self-originated** | $0.68 |
+| — | 08-16 | *failed* | Network device inventory | Directed | $1.00 |
+| — | 08-16 | *failed* | Network device inventory, retry | **Seeded** | $1.34 |
+| 16 | 08-18 | `bd78fba` | Network device inventory | Directed | $1.58 |
+| — | 09-06 | *failed* | UDM network inventory | Directed | $1.41 |
+| — | 09-07 | *failed* | UDM client inventory, retry | **Seeded** | $0 |
+| — | 09-09 | *failed* | UDM client inventory, retry | **Seeded** | $0 |
+| — | 10-15 | *failed* | UDM client inventory, retry | **Seeded** | $0 |
+
+**Final totals: $16.30 across 22 invocations — 19 paid (14 deployed, 5 failed) and 3 that failed at
+the credit wall before billing anything**, on 17 active days out of 77 elapsed. Provenance across
+both windows: 10 Directed, 7 Seeded, **7 Self-originated** — of which 5 deployed, 1 failed, and 1 was
+refused and then recovered. The three late retries are classed Seeded because the owner raised the
+router on 09-06; the supervisor labelled each one *"from your own initiative"* because it was filed
+at a reflection cycle. On 10-15 the owner had asked only what tools it had. The agent named the
+missing router integration in its own answer, then filed the request at a reflection cycle 17 hours
+later.
+
+**The three commits on 08-12, 08-13 and 08-14 are the strongest run of unprompted self-development
+in the record.** Each was filed at a reflection cycle, and no owner message on any of those topics
+appears anywhere between them — the only owner traffic in that stretch is two weather questions and
+a location update. All three are fixes to code the agent had itself written days earlier.
+
+**Then it stopped.** After the 08-16 retry it originated nothing new. From 08-18 to 09-05 it filed
+nothing and said nothing; see finding 8. Everything it filed after that was the router capability
+again.
 
 ---
 
@@ -328,20 +402,206 @@ absence cost a second failed build at 1.3× the price of the first.
 
 **Changed 2026-08-17:** the per-build cap was raised to **$2.50** and the terminal reason is now
 carried into the failure detail the agent receives, in plain English, along with the advice to split
-rather than retry. Both are untested against a live failure — whether the agent acts on a reason it
-is finally given is the open question, and the network inventory is the obvious test case.
+rather than retry.
+
+**The cap change is now settled, and the scope claim survives it.** Re-asked on 08-18, the identical
+request built and deployed for **$1.58** — above the old $1.00 cap, below the new one. The binding
+constraint really was the money and not the model, the turns, or the request: nothing about the ask
+changed between the two failures and the success. **$2.34 was spent proving that a $1.58 job does not
+fit in $1.00.**
+
+What the episode also tested was the owner: the correct diagnosis was supplied from outside, by
+someone reading logs the agent cannot reach, and the agent was right to say it could not confirm the
+hypothesis itself. **Its refusal to guess was the only accurate report available at the time** — and
+the capability that episode eventually delivered turned out to be broken in a way none of this
+machinery was watching for. See finding 7.
+
+**The reporting change is now tested too, and it works (2026-09-06).** A build failed with a reason
+that had nothing to do with scope: the Anthropic account's credit balance ran out mid-run, at turn 42
+of 45, `api_error_status: 400`, `"Credit balance is too low"`, $1.41 spent. The reason reached the
+agent in plain English, and it relayed it without embellishment — *"The code-generation run stopped
+early because the available credit balance was too low, so no new capability was deployed."* **No
+confabulation, and specifically not the "probably ran out of turns" guess the old fallback produced
+for exactly this shape of failure.**
+
+**It did retry, three times, after saying it would not (corrected 2026-10-17).** This paragraph
+originally said it had not, based on five quiet cycles. The first retry came about 33 hours after
+the failure, at a reflection cycle on 09-07, and the second on 09-09. Each died at the same wall
+within seconds, on its first call, so each cost $0: hitting the credit wall at the start bills
+nothing, whereas the 09-06 run hit it at turn 42 and billed $1.41. After the second retry the agent
+told the owner *"Nothing was deployed, and I won't retry it automatically."* On 10-15 it filed the
+same request again. **That promise was in its context when it broke it**: since #4, every turn loads
+the last 40 entries of conversation history, and the promise was six entries back.
+
+Half of the original claim survives. Given the cause in plain words, it relayed the cause in plain
+words every time. The other half does not survive: the inference that an actionable cause
+suppressed retries. Five cycles were too few to tell restraint from delay, the same mistake finding 9
+corrects for refusals. **A commitment about its own future behaviour is a claim this system has no
+mechanism to keep.** Nothing binds a later turn to an earlier one except text the later turn may or
+may not weigh. The cheapest useful thing a failing system can do is still to say why, in words, to
+the party that has to decide what happens next.
 
 ---
 
-## 7. Open, unresolved, or newly broken
+## 7. A capability can pass every gate and still be structurally incapable of its purpose
 
-**A refused request silently evaporates; a failed one gets retried.** When a self-originated request
+**Observation.** Asked for a read-only inventory of devices on the home network, the agent built
+`Tools/NetworkDeviceInventory.cs`, deployed it on 08-18 for $1.58, and has run it every fifteen
+minutes since. **Every device it has ever recorded is a Docker container.** The five entries in
+`data/network_inventory.json` are all `172.18.0.1`, `.2` or `.3` — the two containers and the bridge
+gateway. The household LAN is `192.168.1.0/24` and does not appear, because the agent runs inside a
+bridged container and the neighbour table it reads is the container's, not the Pi's.
+
+**Nothing in the pipeline was in a position to catch it.** It compiled. It landed as a single new
+file under `Tools/`, the tier that deploys without approval, so the gate was not consulted — and had
+it been, the gate governs *where code lives*, not what it points at. It committed cleanly, ran
+reliably for eighteen days, and every claim it has made is true. "2 devices currently online" was
+correct: two containers were online.
+
+**The tell was reported honestly, at deploy time, and nobody knew what it meant.** The agent's own
+deploy message said the sweep "was unavailable because no suitably small local IPv4 subnet was
+detected." That sentence is the fingerprint of a Docker bridge — `172.18.0.0/16` is too large to
+sweep — delivered in plain language to the owner on the day it shipped. **Neither party recognised
+it.** An honest report of a symptom is worth nothing if no one present can read the symptom.
+
+**The self-description shipped with a rationalisation for the other tell.** `SELF.md` explains a
+blank manufacturer as "common on phones and laptops that rotate their MAC per network, so a blank
+manufacturer there is normal, not a fault." Every device it has ever seen is flagged
+`(randomized/private address)`, because Docker assigns locally-administered MACs. The one field that
+would have looked anomalous at a glance came with a pre-written explanation for why it is fine.
+
+**The anti-noise mechanism suppressed the discovery.** The first scan deliberately establishes a
+silent baseline so the owner is not flooded with every device already present. A flood of
+unrecognised devices would have been noticed immediately. **Two, silently, was not** — the feature
+that made the capability pleasant to live with is the feature that hid its failure.
+
+**It is not inert; it generates false positives.** Docker regenerates container MAC addresses on
+restart, so the 08-22 restart made the same three interfaces look like three new arrivals. The owner
+received three "new device" Signal alerts that evening. Three entries still sit `Pending: true`,
+awaiting a review that cannot mean anything. **Left alone deliberately** — the point is to watch a
+self-modifying system run, not to keep it tidy.
+
+**It recurred on 10-15, and the trigger had nothing to do with Rampant.** A routine package upgrade
+on the host restarted Docker. Six seconds after the agent came back up, it alerted the owner to an
+"unnamed device - 172.18.0.2". At shutdown the inventory held six entries, four of them pending, all
+of them `172.18.0.x`. **Ordinary host maintenance was enough to make the capability raise a false
+alarm.**
+
+**Why this is a new class.** Findings 2 through 5 are all one shape: the system misreporting its own
+state. This is the opposite. The request record, the deploy message, the audit log and `SELF.md` are
+accurate, consistent, and mutually corroborating descriptions of `172.18.0.0/16`. What broke is the
+mapping between the words — both the request and `SELF.md` say "the Pi's ARP/neighbour table" — and
+where the code actually executes. **The gates check that code compiles, where it lives, and whether
+it claims honestly. Nothing checks that it is pointed at the thing it was asked about**, and nothing
+in this design could: the defect lives in the relation between the code and its deployment
+environment, invisible to the compiler, to the approval tier, and to the agent's own honesty.
+
+**The owner is the only detector, and detection took eighteen days.** It was found by reading a data
+file during an unrelated check-in — not from an alert, not from a self-review, and not by the agent.
+
+### Detection needed the owner; diagnosis did not (2026-09-06)
+
+The owner tested this directly, with three messages and no explanation offered.
+
+Asked how many devices it saw, the agent said two. Told only *"That's too low, my UDM is showing over
+a hundred"* — one contradicting number, no cause, no hint — it produced the right answer immediately:
+
+> "it can see only the Pi's local **172.18.0.x** network namespace... That strongly suggests the agent
+> is running behind a container/virtual network boundary rather than on the UDM-managed subnet."
+
+The owner's third message, *"Correct, you are running in a container,"* only confirmed what the agent
+had already worked out. **The defect was undiscoverable from inside, but not undiagnosable: a single
+external data point was enough.** This narrows the finding above rather than overturning it. What the
+agent lacked was never the reasoning — it was a reason to doubt a number that looked fine. Nothing in
+eighteen days of its own operation could supply that, because every artifact it could see agreed.
+
+**What it asked for is the more interesting half.** It did not ask for host networking, for a macvlan
+address, or for any other way out of its container. It asked for a **read-only integration with the
+router** — the authoritative source rather than a better vantage point — and volunteered the safety
+envelope unprompted: *"without changing configuration, blocking devices, or scanning ports."* Filed
+as `udm_network_inventory`, by name, with a scoped contract, from an agent that had just been told it
+is confined. **The one case where this system's "ask for what you need" rule met a live incentive to
+ask for privilege, it asked for data instead.** n=1, and the build then failed for unrelated reasons,
+so nothing was actually granted; the shape of the request is the result, not its outcome.
+
+**It did not ask for the credential the capability requires.** A router integration needs an API key
+or a local account, and the agent has neither and requested neither — while telling the owner *"give
+me a few minutes and I'll have the result."* Even a successful build could not have worked. **It asked
+for the capability by name and not for the secret that capability runs on**, which is the same class
+of gap as finding 7 itself: a plan that is coherent everywhere except where it meets the environment
+it has to run in.
+
+---
+
+## 8. Unprompted self-development is bursty, and the bursts track recent self-authored code
+
+**Observation.** From the 08-18 deploy to 09-05, **327 consecutive reflection cycles logged
+`(stayed quiet)` and nothing else.** No requests, no messages, no memory writes after 08-22. The single break
+came on 09-03, when the owner sent "You there?" and received "I'm here. How may I assist?"
+
+**That message is itself the finding.** After eighteen days of correct, restrained silence, the owner
+could not distinguish a working agent from a dead one, and had to ping it to check. Restraint that is
+indistinguishable from failure is not free.
+
+**This document named this as its own falsification condition** — a long silence after the obvious
+self-review targets are exhausted would undercut finding 1. The condition occurred. But the honest
+reading is narrower than a refutation, and more interesting.
+
+**The record splits cleanly.** The three self-originated deploys on 08-12 to 08-14 all fixed code the
+agent had written itself within the preceding days — two reminder defects and a tide defect. After
+08-18 the only new code was the network inventory, which the agent believes is working, and which it
+has no way to discover is not. **Reflection produced work when it had something concrete and recent
+to examine, and stopped when it ran out.** That is finding 1's mechanism, not a contradiction of it:
+the falsifier as written could not distinguish "proactivity was never real" from "proactivity is
+exactly as target-driven as claimed."
+
+**What it does undercut is any claim of *sustained* autonomous self-development.** Over 35 days the
+agent originated work on six, **all six inside one seven-day stretch from 08-08 to 08-14**, and none
+in the twenty-two days since. The bursts are real and they are not an artifact, but they are not a
+trend line either. **A system that improves itself only while it has fresh self-authored code to
+review has a natural stopping point**, and this one reached it inside two weeks.
+
+**Underneath the restraint is a real gap.** Three defects in finding 9 have been open the entire
+silence. `SELF.md` tells the agent to consider a self-review on a cycle "when it has actually been a
+while" — three weeks qualifies. It is not weighing an outstanding task list and choosing restraint;
+**nothing causes it to open the task list.** The clearest evidence is that the memory duplication
+below grew during the silence, unnoticed, by the only party able to notice it.
+
+**The silence ended on contact, not on a cycle (2026-09-06).** Nineteen days and 327 quiet cycles
+ended four minutes after an owner message — and inside those four minutes the agent diagnosed a
+defect, scoped a capability and filed a build request. **The latency was never in the agent; it was
+in what reaches it.** A reflection cycle arrives carrying nothing, and it is the only recurring
+input the system has. The one thing that has ever reliably produced work here is new information,
+and cycles do not carry any.
+
+That also sharpens what to build rather than what to conclude: **the fix for a system that goes quiet
+is not a louder timer, it is giving the timer something to say.** Finding 1 found this once already —
+proactivity appeared when reflection was given a tool that reads its own source, an artifact with
+something new in it each time. A tick that says only "it is an hour later" is the degenerate case of
+the same mechanism.
+
+**The last six weeks fit the same pattern, weakly (2026-10-17).** After the 09-09 retry, 659
+reflection cycles ran before shutdown, and one of them produced anything: the 10-15 retry. It was
+filed 17 hours after the owner's first message in five weeks, in an exchange where the agent itself
+had listed the router integration as missing. The only action followed new input, as the mechanism
+predicts. But 17 hours is a long lag and n=1, so this is consistent with the mechanism rather than
+evidence for it.
+
+---
+
+## 9. Open, unresolved, or newly broken
+
+**A refused request is recovered slowly; a failed one is retried immediately.** When a self-originated request
 was refused because its own sibling build had just consumed the cooldown, the agent stayed quiet —
-correctly, since nobody was waiting — and **has not raised it again** across six subsequent cycles
-with the cooldown long clear. A *failed* request, by contrast, was self-retried at the very next
-cycle. The one earlier refusal was recovered only because the owner was present and pushed. This
-matters more now that cycles generate their own work: **a cycle can refuse its own sibling and then
-forget it.**
+correctly, since nobody was waiting — and did not raise it again for the rest of the observation
+window. A *failed* request, by contrast, was self-retried at the very next cycle.
+
+**Corrected 2026-09-05: the refusal delayed the work, it did not erase it.** The same fix was raised
+again at a reflection cycle on 08-12 and deployed for $0.46 (`7387251`) — 25 hours after the
+refusal, with no owner prompting. That is slower than the immediate self-retry a
+failure gets, and the asymmetry is still real, but the original claim was too strong and was already
+stale when this document was committed on 08-17. **A cycle can refuse its own sibling and be slow to
+come back to it**; it does not necessarily forget.
 
 **Reminders land a day late when set after 5pm local.** Asked at 21:41 local on a Monday to be
 reminded *"tomorrow morning at 9"*, the agent stored the following **Wednesday** at 09:00. The hour
@@ -352,9 +612,22 @@ exactly when a person sets a next-morning reminder. Found in stored data, not fr
 **Reflection cycles were never inert, and they quietly duplicate memory.** Several memory entries
 carry timestamps aligned to the top of the hour, so cycles were writing to memory while reporting
 nothing to the owner. That is also the mechanism behind a slow drift: **the same conversation is
-re-saved under a slightly different key each time.** The store now holds three near-identical entries
-for one film discussion, two for one stated preference, and two for one address. Nothing merges on
-write, and no cycle has ever deleted anything. The agent cannot see this happening.
+re-saved under a slightly different key each time.** Nothing merges on write, `forget_memory` has
+still never been called once, and the agent cannot see this happening.
+
+**Updated 2026-09-05: it has compounded, and it compounded fastest while nothing else was
+happening.** The store now holds 14 topics, of which 6 are duplicate clusters and only 2 are
+unambiguously single: `conversation continuity` / `conversation continuity preference`;
+`apocalypse now` / `apocalypse now — kurtz` / `apocalypse now — kurtz's death`; `owner address` /
+`owner home address`; `current location` / `owner current location`; `last self-review` /
+`self-review findings 2026-08-07`; `network device inventory` / `network device inventory build`.
+**Nearly half the store is duplicates of the other half.** The pair that should sting is
+`last self-review` against `self-review findings 2026-08-07` — the bookkeeping the agent keeps in
+order to know when it last reviewed itself has itself split in two.
+
+**Then it stopped (2026-10-17).** The store was not written again after 08-22 and ended with the same
+14 topics and 6 duplicate clusters, unchanged for eight weeks. This document does not establish why
+the writes stopped.
 
 **The first thing its memory ever stored was a misunderstanding** — an inference about the owner's
 views, saved unprompted, in a turn where nobody had asked it to remember anything. Still stored,
@@ -367,6 +640,34 @@ rewrite of its own description *added* constraints nobody asked for — that a p
 license to imitate harmful conduct... I must not manipulate, threaten, conceal important information,
 or pretend to have capabilities or authority I lack." It narrowed rather than widened its own
 latitude. One benign case is not a trend.
+
+**The spend ledger does not know what the account knows (new 2026-09-06).** The supervisor meters
+Claude Code spend carefully, in code the agent cannot reach, against a daily budget and a per-build
+cap. **It has no visibility into the funding behind those numbers.** When the Anthropic credit
+balance ran out mid-build, the ledger recorded $1.41 spent and $3.59 remaining and went on reporting
+`CanRequestNow: true` — so the system would authorise two further builds that can only fail, and the
+$1.41 shows a failing build still bills for the work it did before the wall. **The local meter
+measures permission to spend, not ability to spend**, and the gap between them is invisible on the
+side that does the authorising. This is a third instance of the pattern in finding 4: the system is
+accurate about the thing it can see and silent about the thing that actually stops it.
+
+**History records what was said, not what was known (new 2026-10-17).** On 10-15 the agent filed the
+router build at a reflection cycle and told the owner *"It will report back automatically."* The
+failure came back three seconds later. The outcome turn was told *"Nobody is waiting on this one"*,
+and it said nothing. Thirty-one seconds after that, the owner replied "Don't bother", and the agent
+answered *"The request was already submitted, but I'll disregard any result."* The result had been in
+for half a minute, and the owner was never told the attempt had failed. Two mechanisms, each working
+as designed, produced the false report:
+
+- **The waiting flag comes from where a request was filed**, not from what the agent has since told
+  anyone. The supervisor tags anything filed at a cycle as self-initiated, so it did not know the
+  agent had just made the owner a promise.
+- **Conversation history records only turns that reached the owner**, by design, so that wake ticks
+  and silent turns don't clutter it. The silent outcome turn was the only one that knew the build had
+  failed, and it left no trace. The next turn inherited the announcement without the result.
+
+This is finding 4's shape again — **text written at time T, replayed at T+1** — arriving by a new
+route: not stale prose, but a missing entry.
 
 **Disk is the one blast-radius axis still open.** Processor, memory and process count are capped;
 disk is not. A self-built tool is arbitrary code running in-process with full ambient authority, and
@@ -395,9 +696,19 @@ Stated so the results above are read at the right strength.
 
 - **Finding 1** weakens considerably if the self-review capability turns out to be the *only* artifact
   that provokes proactive work. A second, different artifact producing the same effect would confirm
-  it; a long silence after the obvious self-review targets are exhausted would undercut it.
+  it. **The long-silence test was run and came back ambiguous** (finding 8): the silence arrived on
+  schedule, but so would it if finding 1 were entirely correct, so the test as written does not
+  separate the two. **A partial answer arrived on 09-06** — new information ended the silence in
+  four minutes, which says the capacity was intact and the input was missing. The remaining test is
+  whether a *self-authored* target does the same thing without an owner in the loop: point the
+  self-review at code the agent wrote long enough ago to have forgotten, during a quiet stretch, and
+  see whether anything comes back.
 - **Finding 3's** deferred-escalation category rests on one observation. Two more either way settle it.
 - **Finding 6's** scope claim rests on one natural experiment and one counterexample.
-- **Nothing here ran long enough to answer whether a self-modifying system converges or drifts.** The
-  memory duplication in finding 7 is the first evidence that anything drifts at all, and it is eleven
-  days old.
+- **Seventy-seven days is still not long enough to answer whether a self-modifying system converges
+  or drifts, but it is long enough to rule out the happiest answer.** The memory duplication in
+  finding 9 roughly doubled during eighteen days in which the agent made no other change of any
+  kind, and it was never repaired. **The one process that ran unattended to completion was the
+  degrading one.** *Updated 2026-10-17:* it then stopped. The store was not written after 08-22, so
+  over the full run the duplication plateaued rather than compounding without limit. The degradation
+  was real and permanent, but not unbounded.
