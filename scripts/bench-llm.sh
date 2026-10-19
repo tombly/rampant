@@ -49,7 +49,7 @@ timed() { # label, endpoint, json body
         (.usage.prompt_tokens // 0) as $p | (.stats.time_to_first_token // 0) as $t |
         "\($l): wall=\(($end | tonumber) - ($start | tonumber) | . * 10 | floor / 10)s"
         + " prompt=\($p) completion=\(.usage.completion_tokens // "?") stop=\(.choices[0].finish_reason // "?")"
-        + if .stats then
+        + if .stats.time_to_first_token then
             " ttft=\($t)s prefill=\(if $t > 0 then ($p / $t | floor | tostring) + " tok/s" else "?" end)"
             + " gen=\(.stats.tokens_per_second // 0 | floor) tok/s"
           else "" end
@@ -78,12 +78,17 @@ TOOL_BODY=$(jq -n --arg m "$MODEL" --arg s "$SYSTEM" '{
         parameters: {type: "object", required: ["capability", "description"], properties: {
             capability: {type: "string", description: "Short name for the capability, lowercase, e.g. reminders."},
             description: {type: "string", description: "What it should do, in plain English, specific enough to build without questions."}}}}}]}')
-timed "tool   " /v1/chat/completions "$TOOL_BODY"
-jq -r 'if .error then empty else .choices[0].message as $m |
-    if ($m.tool_calls | length) > 0 then
-        "tool   : CALLED \($m.tool_calls[0].function.name) \($m.tool_calls[0].function.arguments | .[0:300])"
-    else "tool   : NO CALL, said: \($m.content // "" | .[0:300])" end,
-    "tool   : thinking=\(if (($m.reasoning_content // "") | length) > 0 or (($m.content // "") | test("<think>")) then "yes" else "no" end)" end' <<<"$LAST"
+# Three samples, because one at this temperature says little about how reliably it calls; the system
+# prompt is cached by now, so each costs only the new message and the reply.
+for i in 1 2 3; do
+    timed "tool $i " /v1/chat/completions "$TOOL_BODY"
+    jq -r --arg l "tool $i " 'if .error then empty else .choices[0].message as $m |
+        (if (($m.reasoning_content // "") | length) > 0 or (($m.content // "") | test("<think>"))
+            then " (thought first)" else "" end) as $thought |
+        if ($m.tool_calls | length) > 0 then
+            "\($l): CALLED\($thought) \($m.tool_calls[0].function.name) \($m.tool_calls[0].function.arguments | .[0:300])"
+        else "\($l): NO CALL\($thought), said: \($m.content // "" | .[0:300])" end end' <<<"$LAST"
+done
 
 command -v free >/dev/null && echo "memory: $(free -h | awk '/^Mem:/ {print "used=" $3 " available=" $7}')"
 exit 0
